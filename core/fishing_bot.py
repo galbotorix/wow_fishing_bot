@@ -120,6 +120,7 @@ class FishingBot:
                     if clear_screenshots_before_each_cast:
                         screenshot_capture.clear_screenshots()
                     controls_interaction.cast_fishing_line()
+                    object_detection.reset_splash_watch()
                     splash_watch_attempts = 0
                     splash_watch_start_time = 0.0
                     bobber_search_attempts = 0

@@ -81,6 +81,7 @@ def test_happy_path_casts_finds_bobber_detects_splash_and_reels_in(mocks):
     FishingBot().run(on_state_change=state_changes.append)
 
     mocks["controls_interaction"].cast_fishing_line.assert_called_once()
+    mocks["object_detection"].reset_splash_watch.assert_called_once()  # motion detector cleared for the new cast
     assert mocks["object_detection"].find_bobber.call_count == 1
     assert mocks["object_detection"].detect_splash.call_count == 3
     mocks["controls_interaction"].reel_in_bobber.assert_called_once_with(bobber_position)

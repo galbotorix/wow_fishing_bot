@@ -14,7 +14,10 @@ from support.constants import assets_dir_name, templates_dir_name, bobber_templa
     bobber_color_blue_hue_range, bobber_color_red_hue_ranges, bobber_color_min_blue_pixels, \
     bobber_color_min_red_pixels, bobber_color_fallback_min_blob_area, bobber_color_fallback_max_pair_distance, \
     bobber_color_fallback_search_radius, bobber_fallback_seed_candidates, bobber_fallback_seed_min_distance, \
-    splash_region_radius, splash_brightness_threshold, splash_pixel_ratio_threshold
+    splash_region_radius, splash_brightness_threshold, splash_pixel_ratio_threshold, \
+    splash_detection_mode, splash_motion_region_radius, splash_motion_baseline_frames, \
+    splash_motion_spike_factor, splash_motion_min_diff, splash_motion_pixel_threshold, \
+    splash_motion_min_changed_ratio
 
 logger = get_logger(__name__)
 
@@ -41,6 +44,10 @@ class ObjectDetection:
         self.bobber_template_gray: Optional[np.ndarray] = self.__load_template_gray(
             templates_dir / bobber_template_file_name
         )
+
+        # State for motion-based splash detection; cleared before every cast.
+        self._previous_splash_region: Optional[np.ndarray] = None
+        self._motion_baseline_diffs: list[float] = []
 
     @staticmethod
     def __load_template_gray(template_path: Path) -> Optional[np.ndarray]:
@@ -400,8 +407,92 @@ class ObjectDetection:
 
         return frame.image[y_start:y_end, x_start:x_end]
 
+    def reset_splash_watch(self) -> None:
+        """
+        Forgets everything the motion detector learned about the previous
+        cast. Must be called before every new cast, since the bobber lands
+        somewhere new and the water there moves differently.
+        """
+        self._previous_splash_region = None
+        self._motion_baseline_diffs = []
+
     @handle_errors()
-    def detect_splash(self, frame: ScreenshotFrame, bobber_position: tuple[int, int]) -> bool:
+    def detect_splash(self, frame: ScreenshotFrame, bobber_position: tuple[int, int],
+                      mode: Optional[str] = None) -> bool:
+        """
+        Detects a bite using the detector chosen by `splash_detection_mode`
+        ("motion", "brightness" or "either"), or by `mode` if given.
+
+        The motion detector needs to see consecutive frames from the same
+        cast, so call this once per captured frame and call
+        reset_splash_watch() before each new cast.
+        """
+        mode = mode or splash_detection_mode
+        if mode == "brightness":
+            return self.detect_splash_by_brightness(frame, bobber_position)
+        if mode == "motion":
+            return self.detect_splash_by_motion(frame, bobber_position)
+        if mode == "either":
+            # Evaluate both so the motion detector always sees every frame.
+            by_motion = self.detect_splash_by_motion(frame, bobber_position)
+            by_brightness = self.detect_splash_by_brightness(frame, bobber_position)
+            return by_motion or by_brightness
+        raise ValueError(f"Unknown splash_detection_mode: {mode!r} (use 'motion', 'brightness' or 'either')")
+
+    @handle_errors()
+    def detect_splash_by_motion(self, frame: ScreenshotFrame, bobber_position: tuple[int, int]) -> bool:
+        """
+        Detects a bite as a sudden burst of movement around the bobber,
+        regardless of what the splash animation looks like.
+
+        Each frame is compared with the previous one. The first
+        `splash_motion_baseline_frames` comparisons learn how much the
+        water normally changes (ripples, bobber bobbing). After that, a
+        frame counts as a bite when its change is both
+          - at least `splash_motion_spike_factor` x the normal change, and
+          - above the absolute floors `splash_motion_min_diff` and
+            `splash_motion_min_changed_ratio`,
+        so tiny noise on perfectly still water can't trigger it.
+        """
+        region_gray = self.__extract_region_gray(frame, bobber_position, splash_motion_region_radius)
+        if region_gray is None:
+            return False
+        # Light blur so compression noise / single-pixel shimmer doesn't count as motion.
+        region_gray = cv2.GaussianBlur(region_gray, (5, 5), 0)
+
+        previous = self._previous_splash_region
+        self._previous_splash_region = region_gray
+        if previous is None or previous.shape != region_gray.shape:
+            logger.info("Motion splash check near %s: first frame, learning water motion.", bobber_position)
+            return False
+
+        abs_diff = cv2.absdiff(region_gray, previous)
+        mean_diff = float(abs_diff.mean())
+        changed_ratio = float(np.count_nonzero(abs_diff > splash_motion_pixel_threshold)) / abs_diff.size
+
+        if len(self._motion_baseline_diffs) < splash_motion_baseline_frames:
+            self._motion_baseline_diffs.append(mean_diff)
+            logger.info("Motion splash check near %s: learning water motion (%d/%d), diff=%.2f",
+                        bobber_position, len(self._motion_baseline_diffs), splash_motion_baseline_frames,
+                        mean_diff)
+            return False
+
+        baseline = float(np.median(self._motion_baseline_diffs))
+        required_diff = max(splash_motion_min_diff, baseline * splash_motion_spike_factor)
+        is_splash = mean_diff >= required_diff and changed_ratio >= splash_motion_min_changed_ratio
+
+        logger.info("Motion splash check near %s: diff=%.2f (need %.2f, baseline %.2f), changed=%.3f "
+                    "(need %.3f) -> %s", bobber_position, mean_diff, required_diff, baseline, changed_ratio,
+                    splash_motion_min_changed_ratio, "SPLASH" if is_splash else "no splash")
+
+        if not is_splash:
+            # Keep the baseline current (lighting/weather changes) using a rolling window.
+            self._motion_baseline_diffs.append(mean_diff)
+            self._motion_baseline_diffs = self._motion_baseline_diffs[-max(splash_motion_baseline_frames, 8):]
+        return is_splash
+
+    @handle_errors()
+    def detect_splash_by_brightness(self, frame: ScreenshotFrame, bobber_position: tuple[int, int]) -> bool:
         """
         Detects a splash via a bright-pixel-ratio heuristic in a small
         region around `bobber_position` (absolute screen coordinates).
@@ -413,7 +504,7 @@ class ObjectDetection:
         screenshots: ratio was exactly 0.0 on every non-splash frame
         and 0.004-0.009 on every confirmed real splash frame.
         """
-        region_gray = self.__extract_region_gray(frame, bobber_position)
+        region_gray = self.__extract_region_gray(frame, bobber_position, splash_region_radius)
         if region_gray is None:
             return False
 
@@ -427,20 +518,21 @@ class ObjectDetection:
         return is_splash
 
     @staticmethod
-    def __extract_region_gray(frame: ScreenshotFrame, bobber_position: tuple[int, int]) -> Optional[np.ndarray]:
+    def __extract_region_gray(frame: ScreenshotFrame, bobber_position: tuple[int, int],
+                              radius: int) -> Optional[np.ndarray]:
         """
-        Crops a square grayscale region of radius `splash_region_radius`
-        around `bobber_position`, converted from absolute screen
-        coordinates to frame-local pixel coordinates.
+        Crops a square grayscale region of `radius` pixels around
+        `bobber_position`, converted from absolute screen coordinates to
+        frame-local pixel coordinates.
         """
         local_x = bobber_position[0] - frame.origin[0]
         local_y = bobber_position[1] - frame.origin[1]
 
         height, width = frame.image.shape[:2]
-        x_start = max(0, local_x - splash_region_radius)
-        x_end = min(width, local_x + splash_region_radius)
-        y_start = max(0, local_y - splash_region_radius)
-        y_end = min(height, local_y + splash_region_radius)
+        x_start = max(0, local_x - radius)
+        x_end = min(width, local_x + radius)
+        y_start = max(0, local_y - radius)
+        y_end = min(height, local_y + radius)
 
         if x_start >= x_end or y_start >= y_end:
             logger.warning("Bobber position %s is outside the captured frame; skipping splash check.",

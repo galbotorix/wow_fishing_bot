@@ -141,7 +141,7 @@ def test_detect_splash_false_when_no_splash_present(objects):
     object_detection = objects['object_detection']
     frame = load_frame("screenshot_with_bobber_no_splash.jpg")
 
-    assert object_detection.detect_splash(frame, KNOWN_BOBBER_POSITION) is False
+    assert object_detection.detect_splash(frame, KNOWN_BOBBER_POSITION, mode="brightness") is False
 
 
 def test_detect_splash_true_when_splash_present(objects):
@@ -152,7 +152,7 @@ def test_detect_splash_true_when_splash_present(objects):
     object_detection = objects['object_detection']
     frame = load_frame("screenshot_with_bobber_with_splash.jpg")
 
-    assert object_detection.detect_splash(frame, SPLASH_BOBBER_POSITION) is True
+    assert object_detection.detect_splash(frame, SPLASH_BOBBER_POSITION, mode="brightness") is True
 
 
 def test_detect_splash_returns_false_when_region_out_of_frame(objects):
@@ -165,7 +165,7 @@ def test_detect_splash_returns_false_when_region_out_of_frame(objects):
     frame = load_frame("screenshot_with_bobber_with_splash.jpg")
     out_of_bounds_position = (-10_000, -10_000)
 
-    assert object_detection.detect_splash(frame, out_of_bounds_position) is False
+    assert object_detection.detect_splash(frame, out_of_bounds_position, mode="brightness") is False
 
 
 # ----- Multi-scale matching --------------------------------------------------
@@ -414,3 +414,83 @@ def test_has_bobber_feather_colors_true_when_region_out_of_bounds(objects):
     assert object_detection.has_bobber_feather_colors(frame, out_of_bounds_position) is True
 
 
+
+
+# --- Motion-based splash detection -------------------------------------------
+
+import numpy as np
+
+MOTION_POSITION = (100, 100)
+
+
+def make_water_frame(seed: int, splash: bool = False) -> ScreenshotFrame:
+    """
+    A synthetic 200x200 "water" frame: a fixed texture with a little
+    random shimmer each frame (normal ripples). With splash=True, a
+    burst of bright/dark blobs is drawn around the bobber, like a bite.
+    """
+    base = np.random.default_rng(0).integers(40, 90, (200, 200), dtype=np.uint8)
+    shimmer = np.random.default_rng(seed).integers(-4, 5, (200, 200))
+    gray = np.clip(base.astype(int) + shimmer, 0, 255).astype(np.uint8)
+    if splash:
+        rng = np.random.default_rng(1000 + seed)
+        for _ in range(25):
+            cx, cy = rng.integers(70, 130, 2)
+            cv2.circle(gray, (int(cx), int(cy)), int(rng.integers(3, 8)), int(rng.integers(0, 255)), -1)
+    return ScreenshotFrame(image=cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR), timestamp=0.0, origin=(0, 0))
+
+
+def test_motion_splash_not_triggered_by_normal_water(objects):
+    object_detection = objects['object_detection']
+    object_detection.reset_splash_watch()
+
+    results = [object_detection.detect_splash(make_water_frame(i), MOTION_POSITION, mode="motion")
+               for i in range(20)]
+
+    assert not any(results)
+
+
+def test_motion_splash_detected_when_burst_of_motion_appears(objects):
+    object_detection = objects['object_detection']
+    object_detection.reset_splash_watch()
+
+    for i in range(6):
+        assert object_detection.detect_splash(make_water_frame(i), MOTION_POSITION, mode="motion") is False
+
+    assert object_detection.detect_splash(make_water_frame(99, splash=True), MOTION_POSITION, mode="motion") is True
+
+
+def test_motion_splash_never_fires_while_still_learning_baseline(objects):
+    """Even a big change can't trigger before the baseline frames are collected."""
+    object_detection = objects['object_detection']
+    object_detection.reset_splash_watch()
+
+    assert object_detection.detect_splash(make_water_frame(0), MOTION_POSITION, mode="motion") is False
+    assert object_detection.detect_splash(make_water_frame(1, splash=True), MOTION_POSITION, mode="motion") is False
+
+
+def test_reset_splash_watch_forgets_previous_cast(objects):
+    object_detection = objects['object_detection']
+    for i in range(6):
+        object_detection.detect_splash(make_water_frame(i), MOTION_POSITION, mode="motion")
+
+    object_detection.reset_splash_watch()
+
+    # Straight after a reset the first frame only seeds the detector.
+    assert object_detection.detect_splash(make_water_frame(99, splash=True), MOTION_POSITION, mode="motion") is False
+
+
+def test_either_mode_fires_on_bright_splash_fixture(objects):
+    object_detection = objects['object_detection']
+    object_detection.reset_splash_watch()
+    frame = load_frame("screenshot_with_bobber_with_splash.jpg")
+
+    assert object_detection.detect_splash(frame, SPLASH_BOBBER_POSITION, mode="either") is True
+
+
+def test_unknown_splash_mode_raises(objects):
+    object_detection = objects['object_detection']
+    frame = make_water_frame(0)
+
+    with pytest.raises(ValueError):
+        object_detection.detect_splash(frame, MOTION_POSITION, mode="nope")

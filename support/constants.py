@@ -166,6 +166,24 @@ splash_brightness_threshold = 150  # grayscale value (0-255) considered "bright"
 # Set well above the confirmed 0.0000 baseline noise floor and safely
 # below the weakest observed real splash (0.0063) for a wide margin.
 splash_pixel_ratio_threshold = 0.003  # fraction of bright pixels in the region needed to count as a splash
+
+# Which splash detector to use:
+#   "motion"     -- watch the area around the bobber for a sudden burst of
+#                   frame-to-frame change (the bobber dipping + spray).
+#                   Doesn't depend on what the splash looks like, so it
+#                   keeps working if the splash animation/colour changes.
+#   "brightness" -- the original bright-foam-pixel heuristic above.
+#   "either"     -- reel in if either detector fires.
+splash_detection_mode = "motion"
+# How it works: after the bobber is found, the first few frames are used
+# to learn how much the water normally changes between frames (gentle
+# ripples). A bite is a frame whose change is far above that baseline.
+splash_motion_region_radius = 40  # pixels around the bobber to watch for motion
+splash_motion_baseline_frames = 4  # frames used to learn normal water motion before a bite can be detected
+splash_motion_spike_factor = 3.0  # a bite = change at least this many times the normal water motion...
+splash_motion_min_diff = 6.0  # ...and at least this much mean grayscale change (0-255), so dead-still water can't trigger on noise
+splash_motion_pixel_threshold = 25  # per-pixel grayscale change counted as "moved"
+splash_motion_min_changed_ratio = 0.05  # and at least this fraction of the region must have "moved"
 #endregion
 
 #region Controls Interaction Constants
