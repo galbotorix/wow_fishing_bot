@@ -58,10 +58,10 @@ class ControlsInteraction:
         games poll modifier key state and can otherwise miss a
         just-pressed Shift.
 
-        After looting, the mouse is parked out of the way (see
-        `park_mouse_after_reel` / `park_mouse_position`) so the cursor
-        doesn't linger over the water, keeping it clear of the capture
-        area for the next screenshot.
+        The mouse is deliberately NOT moved away afterwards: the loot
+        window opens right under the click point, and loot_at() clicks
+        that same spot to pick the fish up if auto-loot didn't. Call
+        park_mouse() once looting is done.
         """
         focus_window_by_title_substring(wow_window_title_substring)
         x, y = bobber_position
@@ -84,6 +84,30 @@ class ControlsInteraction:
         finally:
             pydirectinput.keyUp(reel_click_modifier_key)
 
+    @handle_errors()
+    def loot_at(self, position: tuple[int, int]) -> None:
+        """
+        Plain right-click (no Shift) at `position` -- the spot the reel-in
+        click used. The loot window opens right under that spot with the
+        catch in its first slot, so this picks the fish up whenever
+        auto-loot didn't. If auto-loot already took it, the click just
+        lands on water and does nothing.
+        """
+        focus_window_by_title_substring(wow_window_title_substring)
+        x, y = position
+        logger.info("Clicking the loot slot under (%d, %d) in case the loot window stayed open.", x, y)
+        pydirectinput.moveTo(x, y, duration=mouse_move_duration)
+        pydirectinput.mouseDown(button=reel_click_button)
+        time.sleep(reel_click_hold_duration)
+        pydirectinput.mouseUp(button=reel_click_button)
+
+    @handle_errors()
+    def park_mouse(self) -> None:
+        """
+        Moves the cursor out of the way (see `park_mouse_after_reel` /
+        `park_mouse_position`) once the catch is looted, so it doesn't sit
+        over the water -- or over where the next loot window will open.
+        """
         if park_mouse_after_reel:
             park_x, park_y = park_mouse_position
             logger.info("Parking mouse at (%d, %d) after looting.", park_x, park_y)

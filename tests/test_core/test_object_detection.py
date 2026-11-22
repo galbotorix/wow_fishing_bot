@@ -444,7 +444,7 @@ def make_water_frame(seed: int, splash: bool = False) -> ScreenshotFrame:
     gray = np.clip(base.astype(int) + shimmer, 0, 255).astype(np.uint8)
     if splash:
         rng = np.random.default_rng(1000 + seed)
-        for _ in range(25):
+        for _ in range(40):
             cx, cy = rng.integers(70, 130, 2)
             cv2.circle(gray, (int(cx), int(cy)), int(rng.integers(3, 8)), int(rng.integers(0, 255)), -1)
     return ScreenshotFrame(image=cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR), timestamp=0.0, origin=(0, 0))
@@ -488,6 +488,15 @@ def test_reset_splash_watch_forgets_previous_cast(objects):
 
     # Straight after a reset the first frame only seeds the detector.
     assert object_detection.detect_splash(make_water_frame(99, splash=True), MOTION_POSITION, mode="motion") is False
+
+
+def test_motion_watch_area_scales_with_bobber_size(objects):
+    object_detection = objects['object_detection']
+    assert object_detection.motion_radius_for_bobber_height(None) == 40      # unknown -> default
+    assert object_detection.motion_radius_for_bobber_height(57) == 40        # close bobber
+    assert object_detection.motion_radius_for_bobber_height(39) == 27        # far bobber
+    assert object_detection.motion_radius_for_bobber_height(5) == 18         # clamped
+    assert object_detection.motion_radius_for_bobber_height(500) == 60       # clamped
 
 
 def test_either_mode_fires_on_bright_splash_fixture(objects):
@@ -554,3 +563,52 @@ def test_brightness_splash_false_alarms_on_new_cork_bobber(objects):
     frame = load_frame("screenshot_with_bobber_no_splash.jpg")
 
     assert object_detection.detect_splash(frame, KNOWN_BOBBER_POSITION, mode="brightness") is True
+
+
+def load_sequence(name):
+    data = np.load(FIXTURES_DIR / name)
+    origin = tuple(int(v) for v in data["origin"])
+    frames = [ScreenshotFrame(image=cv2.cvtColor(g, cv2.COLOR_GRAY2BGR), timestamp=0.0, origin=origin)
+              for g in data["frames"]]
+    return frames, [float(t) for t in data["times"]]
+
+
+@pytest.mark.parametrize("step", [1, 2, 3])  # every 0.1s, 0.2s, 0.3s
+def test_motion_splash_detects_real_far_bite(objects, step):
+    """
+    Second real capture (Nov 2026): a FAR bobber (~45px tall instead of
+    ~57-62px). Its bite (t=31.3s) is a weaker signal and was missed with a
+    fixed-size watch area; the area now scales with the bobber's size.
+    """
+    object_detection = objects['object_detection']
+    frames, times = load_sequence("real_far_bite_sequence.npz")
+    position = (1072, 153)
+
+    for offset in range(step):
+        object_detection.reset_splash_watch()
+        object_detection.last_bobber_height = 45  # as find_bobber() measured it
+        detected_at = None
+        for frame, t in list(zip(frames, times))[offset::step]:
+            if object_detection.detect_splash(frame, position, mode="motion"):
+                detected_at = t
+                break
+        assert detected_at is not None, f"missed the far bite (offset {offset})"
+        assert 31.25 <= detected_at <= 31.9, f"detected at {detected_at}s (offset {offset})"
+
+
+@pytest.mark.parametrize("step", [1, 2, 3])
+def test_motion_splash_ignores_slowly_drifting_reflection(objects, step):
+    """
+    Second real capture, close bobber, NO bite: a reflection slowly drifts
+    into the watch area. This used to trigger the calm-water comparison;
+    with the default settings it must not count as a bite.
+    """
+    object_detection = objects['object_detection']
+    frames, _ = load_sequence("real_drift_no_bite_sequence.npz")
+
+    for offset in range(step):
+        object_detection.reset_splash_watch()
+        object_detection.last_bobber_height = 62
+        results = [object_detection.detect_splash(frame, (869, 220), mode="motion")
+                   for frame in frames[offset::step]]
+        assert not any(results), f"false bite (offset {offset})"

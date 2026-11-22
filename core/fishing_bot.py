@@ -10,7 +10,8 @@ from core.screenshot_capture import ScreenshotCapture
 from support.app_logging import get_logger
 from support.constants import max_state_machine_iterations, splash_watch_timeout_seconds, \
     cast_animation_wait_seconds, max_bobber_search_attempts, bobber_search_retry_delay_seconds, \
-    wait_time_between_screenshots, save_splash_watch_screenshots, loot_wait_seconds, start_delay_seconds, bobber_motion_check_delay_seconds, \
+    wait_time_between_screenshots, save_splash_watch_screenshots, loot_wait_seconds, \
+    loot_click_after_reel, loot_window_open_delay_seconds, start_delay_seconds, bobber_motion_check_delay_seconds, \
     clear_screenshots_before_each_cast as default_clear_screenshots_before_each_cast
 
 logger = get_logger(__name__)
@@ -214,8 +215,18 @@ class FishingBot:
                     # fish is lost, so wait before going back to IDLE (which
                     # casts immediately).
                     # TODO: bag-full check once OCR is implemented.
-                    logger.info("Waiting %.1fs for auto-loot to finish before recasting.", loot_wait_seconds)
-                    sleep(loot_wait_seconds)
+                    assert bobber_position is not None
+                    waited = 0.0
+                    if loot_click_after_reel:
+                        # Loot window (if auto-loot failed) opens under the
+                        # reel-in click; click the same spot to take the fish.
+                        sleep(loot_window_open_delay_seconds)
+                        waited = loot_window_open_delay_seconds
+                        controls_interaction.loot_at(bobber_position)
+                    controls_interaction.park_mouse()
+                    remaining = max(0.0, loot_wait_seconds - waited)
+                    logger.info("Waiting %.1fs for looting to finish before recasting.", remaining)
+                    sleep(remaining)
                     state = FishingState.IDLE
             except Exception:
                 logger.exception("Unexpected error while handling state %s; aborting.", state.name)

@@ -184,19 +184,31 @@ splash_detection_mode = "motion"
 # How it works: after the bobber is found, the first few frames are used
 # to learn how much the water normally changes between frames (gentle
 # ripples). A bite is a frame whose change is far above that baseline.
-splash_motion_region_radius = 40  # pixels around the bobber to watch for motion
+splash_motion_region_radius = 40  # pixels around the bobber to watch for motion, used when the bobber's size is unknown
+# The watch area scales with how big the bobber looks, so a small far-away
+# bobber fills about the same share of it as a close one and the same
+# thresholds work at any distance (a fixed 40px area made far bites look
+# too small to count). radius = bobber height x this factor, clamped.
+splash_motion_radius_per_bobber_height = 0.7
+splash_motion_min_radius = 18
+splash_motion_max_radius = 60
 splash_motion_baseline_frames = 4  # frames used to learn normal water motion before a bite can be detected
 splash_motion_spike_factor = 2.0  # a bite = change at least this many times the normal water motion...
 splash_motion_min_diff = 10.0  # ...and at least this much mean grayscale change (0-255), so dead-still water can't trigger on noise
 splash_motion_pixel_threshold = 25  # per-pixel grayscale change counted as "moved"
 splash_motion_min_changed_ratio = 0.18  # and at least this fraction of the region must have "moved"
-# Tuned on a real 1080p capture (cork bobber, Nov 2026) at the bot's real
+# Tuned on two real 1080p captures (cork bobber near + far, Nov 2026) at the bot's real
 # ~0.3-0.5s screenshot cadence: normal bobbing = diff 2.6-9.0 / changed 0.00-0.11,
 # a bite = diff 15-20 / changed 0.20-0.29. Values sit between the two.
 # Second check: compare each frame with a learned picture of the calm water
 # (median of recent non-bite frames). The spray stays visible ~0.8s, so this
 # still catches a bite when two consecutive screenshots straddle it and look
 # alike. Measured: normal = diff <=9.0 / changed <=0.12; bite = 11.4-19.5 / 0.16-0.31.
+# OFF by default: it was added for the old ~0.5s check speed. At today's
+# ~0.15s it isn't needed, and on a second capture it falsely fired when a
+# reflection slowly drifted into the watch area (it builds up gradually,
+# which frame-to-frame change correctly ignores).
+splash_motion_use_calm_check = False
 splash_motion_background_min_diff = 11.0
 splash_motion_background_min_changed_ratio = 0.15
 splash_motion_background_history = 8  # how many recent calm frames make up the calm-water picture
@@ -235,6 +247,13 @@ reel_click_spray_delay = 0.05  # pause between consecutive spray click attempts
 # closed ~0.4s later. Casting again before that cancels the loot, so the
 # fish is left behind. 2s leaves room for server lag.
 loot_wait_seconds = 2.0
+# If auto-loot doesn't pick the catch up, the loot window stays open right
+# under the reel-in click. So after `loot_window_open_delay_seconds` the bot
+# right-clicks that same spot once more (no Shift), which loots the fish
+# (only the first slot -- fishing nearly always gives one item). If
+# auto-loot already worked, that click just lands on water.
+loot_click_after_reel = True
+loot_window_open_delay_seconds = 0.8  # in a capture the window opened ~0.4s after the click
 # After looting, park the mouse cursor out of the way so it doesn't
 # linger over the water -- an idle cursor can show a tooltip/highlight
 # over nearby objects, and keeping it away from the capture area avoids

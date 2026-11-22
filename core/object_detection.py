@@ -18,7 +18,9 @@ from support.constants import assets_dir_name, templates_dir_name, bobber_templa
     splash_detection_mode, splash_motion_region_radius, splash_motion_baseline_frames, \
     splash_motion_spike_factor, splash_motion_min_diff, splash_motion_pixel_threshold, \
     splash_motion_min_changed_ratio, splash_motion_background_min_diff, \
-    splash_motion_background_min_changed_ratio, splash_motion_background_history
+    splash_motion_background_min_changed_ratio, splash_motion_background_history, \
+    splash_motion_radius_per_bobber_height, splash_motion_min_radius, splash_motion_max_radius, \
+    splash_motion_use_calm_check
 
 logger = get_logger(__name__)
 
@@ -46,10 +48,16 @@ class ObjectDetection:
             templates_dir / bobber_template_file_name
         )
 
+        # Height in pixels of the last template match found by find_bobber()
+        # (None if unknown, e.g. found via the color fallback). Used to scale
+        # the motion-splash watch area to how big the bobber looks on screen.
+        self.last_bobber_height: Optional[int] = None
+
         # State for motion-based splash detection; cleared before every cast.
         self._previous_splash_region: Optional[np.ndarray] = None
         self._motion_baseline_diffs: list[float] = []
         self._calm_regions: list[np.ndarray] = []
+        self._motion_radius: Optional[int] = None
 
     @staticmethod
     def __load_template_gray(template_path: Path) -> Optional[np.ndarray]:
@@ -199,14 +207,16 @@ class ObjectDetection:
             return None
 
         best_val, best_loc, (best_matched_height, best_matched_width) = candidates[0]
+        self.last_bobber_height = None
         best_local_x = best_loc[0] + best_matched_width // 2 + x_start
         best_local_y = best_loc[1] + best_matched_height // 2 + y_start
         best_screen_x = frame.origin[0] + best_local_x
         best_screen_y = frame.origin[1] + best_local_y
 
         if best_val >= bobber_match_threshold:
-            logger.info("Bobber found at screen (%d, %d), score %.3f (threshold %.3f)",
-                        best_screen_x, best_screen_y, best_val, bobber_match_threshold)
+            self.last_bobber_height = int(best_matched_height)
+            logger.info("Bobber found at screen (%d, %d), score %.3f (threshold %.3f), size %dpx tall",
+                        best_screen_x, best_screen_y, best_val, bobber_match_threshold, best_matched_height)
             return best_screen_x, best_screen_y
 
         logger.info(
@@ -226,6 +236,7 @@ class ObjectDetection:
 
             fallback_position = self.__find_bobber_by_color(frame, x_start, x_end, y_start, y_end, seed_position)
             if fallback_position is not None:
+                self.last_bobber_height = int(matched_height)
                 logger.info("Bobber found via color-blob fallback at screen %s (seed score %.3f).",
                             fallback_position, score)
                 return fallback_position
@@ -418,6 +429,7 @@ class ObjectDetection:
         self._previous_splash_region = None
         self._motion_baseline_diffs = []
         self._calm_regions = []
+        self._motion_radius = None
 
     @handle_errors()
     def detect_splash(self, frame: ScreenshotFrame, bobber_position: tuple[int, int],
@@ -442,6 +454,14 @@ class ObjectDetection:
             return by_motion or by_brightness
         raise ValueError(f"Unknown splash_detection_mode: {mode!r} (use 'motion', 'brightness' or 'either')")
 
+    @staticmethod
+    def motion_radius_for_bobber_height(bobber_height: Optional[int]) -> int:
+        """Size of the motion watch area for a bobber that looks `bobber_height` pixels tall."""
+        if not bobber_height:
+            return splash_motion_region_radius
+        radius = int(round(bobber_height * splash_motion_radius_per_bobber_height))
+        return max(splash_motion_min_radius, min(splash_motion_max_radius, radius))
+
     @handle_errors()
     def detect_splash_by_motion(self, frame: ScreenshotFrame, bobber_position: tuple[int, int]) -> bool:
         """
@@ -457,7 +477,9 @@ class ObjectDetection:
             `splash_motion_min_changed_ratio`,
         so tiny noise on perfectly still water can't trigger it.
         """
-        region_gray = self.__extract_region_gray(frame, bobber_position, splash_motion_region_radius)
+        if self._motion_radius is None:
+            self._motion_radius = self.motion_radius_for_bobber_height(self.last_bobber_height)
+        region_gray = self.__extract_region_gray(frame, bobber_position, self._motion_radius)
         if region_gray is None:
             return False
         # Light blur so compression noise / single-pixel shimmer doesn't count as motion.
@@ -467,7 +489,8 @@ class ObjectDetection:
         self._previous_splash_region = region_gray
         if previous is None or previous.shape != region_gray.shape:
             self._calm_regions = [region_gray]
-            logger.info("Motion splash check near %s: first frame, learning water motion.", bobber_position)
+            logger.info("Motion splash check near %s: first frame, learning water motion (watch radius %dpx).",
+                        bobber_position, self._motion_radius)
             return False
 
         # Check 1: sudden change since the previous screenshot.
@@ -492,7 +515,8 @@ class ObjectDetection:
         bg_diff = cv2.absdiff(region_gray, calm)
         bg_mean = float(bg_diff.mean())
         bg_ratio = float(np.count_nonzero(bg_diff > splash_motion_pixel_threshold)) / bg_diff.size
-        disturbed = bg_mean >= splash_motion_background_min_diff and \
+        disturbed = splash_motion_use_calm_check and \
+            bg_mean >= splash_motion_background_min_diff and \
             bg_ratio >= splash_motion_background_min_changed_ratio
 
         is_splash = spike or disturbed

@@ -73,8 +73,8 @@ def test_reel_in_bobber_sprays_clicks_around_the_detected_position(objects, mock
     expected_spray_moves = [
         call(123 + dx, 456 + dy, duration=mouse_move_duration) for dx, dy in reel_click_spray_offsets
     ]
-    # moveTo is also called once more at the end to park the mouse.
-    assert mock_pydirectinput.moveTo.call_args_list[:-1] == expected_spray_moves
+    # No extra move at the end: the mouse stays put for loot_at().
+    assert mock_pydirectinput.moveTo.call_args_list == expected_spray_moves
 
     mock_pydirectinput.keyDown.assert_called_once_with(reel_click_modifier_key)
     assert mock_pydirectinput.mouseDown.call_count == len(reel_click_spray_offsets)
@@ -83,12 +83,12 @@ def test_reel_in_bobber_sprays_clicks_around_the_detected_position(objects, mock
     mock_pydirectinput.mouseUp.assert_called_with(button=reel_click_button)
     mock_pydirectinput.keyUp.assert_called_once_with(reel_click_modifier_key)
 
-    # keyDown(shift) happens before the first click, keyUp(shift) happens
-    # before the final park-mouse moveTo.
+    # keyDown(shift) happens before the first click, keyUp(shift) is the
+    # very last action (the mouse is not parked here any more).
     mock_calls = mock_pydirectinput.mock_calls
     assert mock_calls.index(call.keyDown(reel_click_modifier_key)) < \
            mock_calls.index(call.mouseDown(button=reel_click_button))
-    assert mock_calls.index(call.keyUp(reel_click_modifier_key)) < mock_calls.index(mock_calls[-1])
+    assert mock_calls[-1] == call.keyUp(reel_click_modifier_key)
 
     mock_sleep.assert_any_call(reel_modifier_press_delay)
     mock_sleep.assert_any_call(reel_click_hold_duration)
@@ -96,19 +96,37 @@ def test_reel_in_bobber_sprays_clicks_around_the_detected_position(objects, mock
     mock_sleep.assert_any_call(reel_click_spray_delay)
 
 
-def test_reel_in_bobber_parks_mouse_after_looting(objects, mock_pydirectinput):
+def test_reel_in_bobber_leaves_mouse_on_the_bobber(objects, mock_pydirectinput):
     """
-    After successfully looting, reel_in_bobber() must move the mouse to
-    the configured park position (out of the way of the water/capture
-    area), as the very last action.
+    reel_in_bobber() must NOT move the mouse away afterwards: the loot
+    window opens under the click point, and loot_at() needs that spot.
     """
     controls_interaction = objects['controls_interaction']
 
     controls_interaction.reel_in_bobber((123, 456))
 
     park_x, park_y = park_mouse_position
-    mock_pydirectinput.moveTo.assert_called_with(park_x, park_y, duration=park_mouse_move_duration)
-    assert mock_pydirectinput.mock_calls[-1] == call.moveTo(park_x, park_y, duration=park_mouse_move_duration)
+    assert call(park_x, park_y, duration=park_mouse_move_duration) not in mock_pydirectinput.moveTo.call_args_list
+
+
+def test_loot_at_right_clicks_without_shift(objects, mock_pydirectinput):
+    controls_interaction = objects['controls_interaction']
+
+    controls_interaction.loot_at((123, 456))
+
+    mock_pydirectinput.moveTo.assert_called_once_with(123, 456, duration=mouse_move_duration)
+    mock_pydirectinput.mouseDown.assert_called_once_with(button=reel_click_button)
+    mock_pydirectinput.mouseUp.assert_called_once_with(button=reel_click_button)
+    mock_pydirectinput.keyDown.assert_not_called()
+
+
+def test_park_mouse_moves_to_park_position(objects, mock_pydirectinput):
+    controls_interaction = objects['controls_interaction']
+
+    controls_interaction.park_mouse()
+
+    park_x, park_y = park_mouse_position
+    mock_pydirectinput.moveTo.assert_called_once_with(park_x, park_y, duration=park_mouse_move_duration)
 
 
 def test_reel_in_bobber_does_not_park_mouse_if_click_fails(objects, mock_pydirectinput):

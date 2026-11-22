@@ -362,6 +362,8 @@ def test_waits_for_loot_before_recasting(mocks, mock_sleep):
 
     order = []
     mocks["controls_interaction"].reel_in_bobber.side_effect = lambda *a: order.append("reel")
+    mocks["controls_interaction"].loot_at.side_effect = lambda *a: order.append("loot")
+    mocks["controls_interaction"].park_mouse.side_effect = lambda *a: order.append("park")
     mocks["controls_interaction"].cast_fishing_line.side_effect = lambda *a: order.append("cast")
     mock_sleep.side_effect = lambda seconds: order.append(("sleep", seconds))
 
@@ -375,4 +377,8 @@ def test_waits_for_loot_before_recasting(mocks, mock_sleep):
     assert FishingState.LOOTING in state_changes
     reel_index = order.index("reel")
     second_cast_index = [i for i, item in enumerate(order) if item == "cast"][1]
-    assert ("sleep", loot_wait_seconds) in order[reel_index:second_cast_index]
+    between = order[reel_index:second_cast_index]
+    # wait for the loot window, click the same spot, move the mouse away, then let looting finish
+    assert between.index("loot") < between.index("park")
+    assert sum(item[1] for item in between if isinstance(item, tuple)) >= loot_wait_seconds
+    mocks["controls_interaction"].loot_at.assert_called_once_with((10, 20))
