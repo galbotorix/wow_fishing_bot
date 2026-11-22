@@ -10,7 +10,7 @@ from core.screenshot_capture import ScreenshotCapture
 from support.app_logging import get_logger
 from support.constants import max_state_machine_iterations, splash_watch_timeout_seconds, \
     cast_animation_wait_seconds, max_bobber_search_attempts, bobber_search_retry_delay_seconds, \
-    wait_time_between_screenshots, start_delay_seconds, bobber_motion_check_delay_seconds, \
+    wait_time_between_screenshots, save_splash_watch_screenshots, start_delay_seconds, bobber_motion_check_delay_seconds, \
     clear_screenshots_before_each_cast as default_clear_screenshots_before_each_cast
 
 logger = get_logger(__name__)
@@ -180,7 +180,8 @@ class FishingBot:
                     if splash_watch_attempts == 0:
                         splash_watch_start_time = monotonic()
 
-                    screenshot_frame = screenshot_capture.capture_screenshot(screenshot_number)
+                    screenshot_frame = screenshot_capture.capture_screenshot(screenshot_number,
+                                                                          save=save_splash_watch_screenshots)
                     screenshot_number += 1
                     splash_watch_attempts += 1
                     elapsed_seconds = monotonic() - splash_watch_start_time

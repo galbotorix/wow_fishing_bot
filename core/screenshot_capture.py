@@ -44,7 +44,12 @@ class ScreenshotCapture:
         return mon
 
     @handle_errors()
-    def capture_screenshot(self, screenshot_number: int) -> ScreenshotFrame:
+    def capture_screenshot(self, screenshot_number: int, save: bool = True) -> ScreenshotFrame:
+        """
+        Grabs the configured monitor/region. With save=False the image is
+        only kept in memory (much faster -- writing a 1080p PNG is most of
+        the cost of a capture), which lets the splash watch sample often.
+        """
         with MSS() as sct:
             # Get information of the configured monitor (single session,
             # reused for every grab below).
@@ -78,8 +83,9 @@ class ScreenshotCapture:
             sct_img = sct.grab(region)
 
             # Save to the picture file
-            mss.tools.to_png(sct_img.rgb, sct_img.size, output=str(output))
-            logger.info("Saved screenshot: %s", output)
+            if save:
+                mss.tools.to_png(sct_img.rgb, sct_img.size, output=str(output))
+                logger.info("Saved screenshot: %s", output)
 
             # yield the single screenshot
             return ScreenshotFrame(

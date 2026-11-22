@@ -12,7 +12,13 @@ screenshot_area = {
     "width": 250,
     "height": 250,
 }
-wait_time_between_screenshots = 0.2  # delay between consecutive splash-watch screenshots
+wait_time_between_screenshots = 0.1  # delay between consecutive splash-watch screenshots
+# Saving a full-screen PNG on every splash-watch check was most of the cost
+# of each check, stretching the real gap between checks to ~0.5s -- long
+# enough to sometimes step right over a bite (the visible splash only lasts
+# ~0.8s, with a calm-looking moment in the middle). With saving off, checks
+# run every ~0.15s. Set True only when you need the frames for debugging.
+save_splash_watch_screenshots = False
 # During a long unattended run, one screenshot gets saved per
 # WAITING_FOR_BOBBER/WATCHING_FOR_SPLASH attempt, which adds up fast
 # (a single ~30s splash watch alone saves ~60-150 files). Clearing the
@@ -180,10 +186,20 @@ splash_detection_mode = "motion"
 # ripples). A bite is a frame whose change is far above that baseline.
 splash_motion_region_radius = 40  # pixels around the bobber to watch for motion
 splash_motion_baseline_frames = 4  # frames used to learn normal water motion before a bite can be detected
-splash_motion_spike_factor = 3.0  # a bite = change at least this many times the normal water motion...
-splash_motion_min_diff = 6.0  # ...and at least this much mean grayscale change (0-255), so dead-still water can't trigger on noise
+splash_motion_spike_factor = 2.0  # a bite = change at least this many times the normal water motion...
+splash_motion_min_diff = 10.0  # ...and at least this much mean grayscale change (0-255), so dead-still water can't trigger on noise
 splash_motion_pixel_threshold = 25  # per-pixel grayscale change counted as "moved"
-splash_motion_min_changed_ratio = 0.05  # and at least this fraction of the region must have "moved"
+splash_motion_min_changed_ratio = 0.18  # and at least this fraction of the region must have "moved"
+# Tuned on a real 1080p capture (cork bobber, Nov 2026) at the bot's real
+# ~0.3-0.5s screenshot cadence: normal bobbing = diff 2.6-9.0 / changed 0.00-0.11,
+# a bite = diff 15-20 / changed 0.20-0.29. Values sit between the two.
+# Second check: compare each frame with a learned picture of the calm water
+# (median of recent non-bite frames). The spray stays visible ~0.8s, so this
+# still catches a bite when two consecutive screenshots straddle it and look
+# alike. Measured: normal = diff <=9.0 / changed <=0.12; bite = 11.4-19.5 / 0.16-0.31.
+splash_motion_background_min_diff = 11.0
+splash_motion_background_min_changed_ratio = 0.15
+splash_motion_background_history = 8  # how many recent calm frames make up the calm-water picture
 #endregion
 
 #region Controls Interaction Constants

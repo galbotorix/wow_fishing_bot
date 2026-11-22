@@ -17,7 +17,8 @@ from support.constants import assets_dir_name, templates_dir_name, bobber_templa
     splash_region_radius, splash_brightness_threshold, splash_pixel_ratio_threshold, \
     splash_detection_mode, splash_motion_region_radius, splash_motion_baseline_frames, \
     splash_motion_spike_factor, splash_motion_min_diff, splash_motion_pixel_threshold, \
-    splash_motion_min_changed_ratio
+    splash_motion_min_changed_ratio, splash_motion_background_min_diff, \
+    splash_motion_background_min_changed_ratio, splash_motion_background_history
 
 logger = get_logger(__name__)
 
@@ -48,6 +49,7 @@ class ObjectDetection:
         # State for motion-based splash detection; cleared before every cast.
         self._previous_splash_region: Optional[np.ndarray] = None
         self._motion_baseline_diffs: list[float] = []
+        self._calm_regions: list[np.ndarray] = []
 
     @staticmethod
     def __load_template_gray(template_path: Path) -> Optional[np.ndarray]:
@@ -415,6 +417,7 @@ class ObjectDetection:
         """
         self._previous_splash_region = None
         self._motion_baseline_diffs = []
+        self._calm_regions = []
 
     @handle_errors()
     def detect_splash(self, frame: ScreenshotFrame, bobber_position: tuple[int, int],
@@ -463,15 +466,18 @@ class ObjectDetection:
         previous = self._previous_splash_region
         self._previous_splash_region = region_gray
         if previous is None or previous.shape != region_gray.shape:
+            self._calm_regions = [region_gray]
             logger.info("Motion splash check near %s: first frame, learning water motion.", bobber_position)
             return False
 
+        # Check 1: sudden change since the previous screenshot.
         abs_diff = cv2.absdiff(region_gray, previous)
         mean_diff = float(abs_diff.mean())
         changed_ratio = float(np.count_nonzero(abs_diff > splash_motion_pixel_threshold)) / abs_diff.size
 
         if len(self._motion_baseline_diffs) < splash_motion_baseline_frames:
             self._motion_baseline_diffs.append(mean_diff)
+            self._calm_regions.append(region_gray)
             logger.info("Motion splash check near %s: learning water motion (%d/%d), diff=%.2f",
                         bobber_position, len(self._motion_baseline_diffs), splash_motion_baseline_frames,
                         mean_diff)
@@ -479,16 +485,29 @@ class ObjectDetection:
 
         baseline = float(np.median(self._motion_baseline_diffs))
         required_diff = max(splash_motion_min_diff, baseline * splash_motion_spike_factor)
-        is_splash = mean_diff >= required_diff and changed_ratio >= splash_motion_min_changed_ratio
+        spike = mean_diff >= required_diff and changed_ratio >= splash_motion_min_changed_ratio
 
-        logger.info("Motion splash check near %s: diff=%.2f (need %.2f, baseline %.2f), changed=%.3f "
-                    "(need %.3f) -> %s", bobber_position, mean_diff, required_diff, baseline, changed_ratio,
-                    splash_motion_min_changed_ratio, "SPLASH" if is_splash else "no splash")
+        # Check 2: how different this screenshot is from the calm water.
+        calm = np.median(np.stack(self._calm_regions), axis=0).astype(np.uint8)
+        bg_diff = cv2.absdiff(region_gray, calm)
+        bg_mean = float(bg_diff.mean())
+        bg_ratio = float(np.count_nonzero(bg_diff > splash_motion_pixel_threshold)) / bg_diff.size
+        disturbed = bg_mean >= splash_motion_background_min_diff and \
+            bg_ratio >= splash_motion_background_min_changed_ratio
+
+        is_splash = spike or disturbed
+        logger.info("Motion splash check near %s: frame-diff=%.2f (need %.2f) changed=%.3f (need %.3f) | "
+                    "vs-calm=%.2f (need %.2f) changed=%.3f (need %.3f) -> %s",
+                    bobber_position, mean_diff, required_diff, changed_ratio, splash_motion_min_changed_ratio,
+                    bg_mean, splash_motion_background_min_diff, bg_ratio,
+                    splash_motion_background_min_changed_ratio, "SPLASH" if is_splash else "no splash")
 
         if not is_splash:
-            # Keep the baseline current (lighting/weather changes) using a rolling window.
+            # Keep both references current (lighting, slow drift) with rolling windows.
             self._motion_baseline_diffs.append(mean_diff)
             self._motion_baseline_diffs = self._motion_baseline_diffs[-max(splash_motion_baseline_frames, 8):]
+            self._calm_regions.append(region_gray)
+            self._calm_regions = self._calm_regions[-splash_motion_background_history:]
         return is_splash
 
     @handle_errors()

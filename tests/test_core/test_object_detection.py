@@ -11,17 +11,27 @@ from support.constants import assets_dir_name, templates_dir_name
 
 ASSETS_DIR = Path(object_detection_module.__file__).parent.parent / assets_dir_name / templates_dir_name
 
-KNOWN_BOBBER_POSITION = (901, 425)  # confirmed via find_bobber() on the real fixture screenshot
-# The splash fixture is from a different real cast/session than the
-# no-splash fixture above, so the bobber was at a different position.
-SPLASH_BOBBER_POSITION = (940, 375)
+KNOWN_BOBBER_POSITION = (1018, 176)  # confirmed via find_bobber() on the real fixture screenshot (Nov 2026 capture)
+
+# The original screenshots (older bobber/session) are kept for the
+# brightness splash detector, which only works with that older look.
+LEGACY_DIR = Path(object_detection_module.__file__).parent.parent / "tests" / "fixtures" / "legacy"
+LEGACY_BOBBER_POSITION = (901, 425)
+LEGACY_SPLASH_BOBBER_POSITION = (940, 375)
+FIXTURES_DIR = LEGACY_DIR.parent
 
 
-def load_frame(filename: str) -> ScreenshotFrame:
-    """Loads one of the real fixture screenshots as a ScreenshotFrame with origin (0, 0)."""
-    image = cv2.imread(str(ASSETS_DIR / filename))
+def load_frame(filename: str, directory: Path = ASSETS_DIR, origin: tuple[int, int] = (0, 0)) -> ScreenshotFrame:
+    """Loads one of the real fixture screenshots as a ScreenshotFrame (origin = its top-left on screen)."""
+    image = cv2.imread(str(directory / filename))
     assert image is not None, f"Failed to load fixture image: {filename}"
-    return ScreenshotFrame(image=image, timestamp=0.0, origin=(0, 0))
+    return ScreenshotFrame(image=image, timestamp=0.0, origin=origin)
+
+
+# The legacy screenshots are stored as 200x200 crops around the bobber;
+# the origin puts them back at their original on-screen position.
+LEGACY_NO_SPLASH = ("screenshot_with_bobber_no_splash_crop.jpg", (801, 325))
+LEGACY_WITH_SPLASH = ("screenshot_with_bobber_with_splash_crop.jpg", (840, 275))
 
 
 def test_templates_are_loaded_on_init(objects):
@@ -139,9 +149,9 @@ def test_detect_splash_false_when_no_splash_present(objects):
     floating but hasn't splashed yet.
     """
     object_detection = objects['object_detection']
-    frame = load_frame("screenshot_with_bobber_no_splash.jpg")
+    frame = load_frame(LEGACY_NO_SPLASH[0], LEGACY_DIR, LEGACY_NO_SPLASH[1])
 
-    assert object_detection.detect_splash(frame, KNOWN_BOBBER_POSITION, mode="brightness") is False
+    assert object_detection.detect_splash(frame, LEGACY_BOBBER_POSITION, mode="brightness") is False
 
 
 def test_detect_splash_true_when_splash_present(objects):
@@ -150,9 +160,9 @@ def test_detect_splash_true_when_splash_present(objects):
     just splashed.
     """
     object_detection = objects['object_detection']
-    frame = load_frame("screenshot_with_bobber_with_splash.jpg")
+    frame = load_frame(LEGACY_WITH_SPLASH[0], LEGACY_DIR, LEGACY_WITH_SPLASH[1])
 
-    assert object_detection.detect_splash(frame, SPLASH_BOBBER_POSITION, mode="brightness") is True
+    assert object_detection.detect_splash(frame, LEGACY_SPLASH_BOBBER_POSITION, mode="brightness") is True
 
 
 def test_detect_splash_returns_false_when_region_out_of_frame(objects):
@@ -483,9 +493,9 @@ def test_reset_splash_watch_forgets_previous_cast(objects):
 def test_either_mode_fires_on_bright_splash_fixture(objects):
     object_detection = objects['object_detection']
     object_detection.reset_splash_watch()
-    frame = load_frame("screenshot_with_bobber_with_splash.jpg")
+    frame = load_frame(LEGACY_WITH_SPLASH[0], LEGACY_DIR, LEGACY_WITH_SPLASH[1])
 
-    assert object_detection.detect_splash(frame, SPLASH_BOBBER_POSITION, mode="either") is True
+    assert object_detection.detect_splash(frame, LEGACY_SPLASH_BOBBER_POSITION, mode="either") is True
 
 
 def test_unknown_splash_mode_raises(objects):
@@ -494,3 +504,53 @@ def test_unknown_splash_mode_raises(objects):
 
     with pytest.raises(ValueError):
         object_detection.detect_splash(frame, MOTION_POSITION, mode="nope")
+
+
+def load_real_bite_sequence():
+    """
+    Real capture (Nov 2026): the area around the cork bobber, one frame
+    every 0.2s, from just after it lands until shortly after a bite.
+    The bite starts at video frame 68 (t=6.7s).
+    """
+    data = np.load(FIXTURES_DIR / "real_bite_sequence.npz")
+    origin = tuple(int(v) for v in data["origin"])
+    frames = [ScreenshotFrame(image=cv2.cvtColor(g, cv2.COLOR_GRAY2BGR), timestamp=0.0, origin=origin)
+              for g in data["frames"]]
+    return frames, [int(n) for n in data["frame_numbers"]]
+
+
+REAL_BITE_FIRST_FRAME = 68
+REAL_BITE_BOBBER_POSITION = (1017, 180)
+
+
+@pytest.mark.parametrize("step", [1, 2])  # every 0.2s and every 0.4s
+def test_motion_splash_detects_real_bite_without_false_alarms(objects, step):
+    """
+    Replays the real capture at the bot's cadence, from every possible
+    starting offset: no detection may happen before the bite, and the
+    bite itself must always be caught within a second.
+    """
+    object_detection = objects['object_detection']
+    frames, numbers = load_real_bite_sequence()
+
+    for offset in range(step):
+        object_detection.reset_splash_watch()
+        detected_at = None
+        for frame, number in list(zip(frames, numbers))[offset::step]:
+            if object_detection.detect_splash(frame, REAL_BITE_BOBBER_POSITION, mode="motion"):
+                detected_at = number
+                break
+        assert detected_at is not None, f"missed the bite (offset {offset})"
+        assert REAL_BITE_FIRST_FRAME <= detected_at <= REAL_BITE_FIRST_FRAME + 10, \
+            f"detected at frame {detected_at} (offset {offset})"
+
+
+def test_brightness_splash_false_alarms_on_new_cork_bobber(objects):
+    """
+    Documents why "motion" is the default: the new cork bobber is bright
+    enough by itself to trip the brightness detector with no bite at all.
+    """
+    object_detection = objects['object_detection']
+    frame = load_frame("screenshot_with_bobber_no_splash.jpg")
+
+    assert object_detection.detect_splash(frame, KNOWN_BOBBER_POSITION, mode="brightness") is True
