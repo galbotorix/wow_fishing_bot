@@ -347,3 +347,32 @@ def test_stops_after_max_state_machine_iterations_as_last_resort(mocks, monkeypa
 
     # 5 iterations total; state stays in WAITING_FOR_BOBBER after CASTING+IDLE.
     assert mocks["object_detection"].find_bobber.call_count <= 5
+
+
+def test_waits_for_loot_before_recasting(mocks, mock_sleep):
+    """
+    After the reel-in click the bot must go through LOOTING and sleep
+    loot_wait_seconds BEFORE pressing the cast key again -- recasting
+    straight away cancels auto-loot and leaves the fish behind.
+    """
+    from support.constants import loot_wait_seconds
+
+    mocks["object_detection"].find_bobber.return_value = (10, 20)
+    mocks["object_detection"].detect_splash.return_value = True
+
+    order = []
+    mocks["controls_interaction"].reel_in_bobber.side_effect = lambda *a: order.append("reel")
+    mocks["controls_interaction"].cast_fishing_line.side_effect = lambda *a: order.append("cast")
+    mock_sleep.side_effect = lambda seconds: order.append(("sleep", seconds))
+
+    # IDLE, CASTING, WAITING_FOR_BOBBER, WATCHING_FOR_SPLASH, REELING,
+    # LOOTING, then IDLE again (second cast), then stop.
+    mocks["emergency_stop"].is_stop_requested.side_effect = [False] * (start_delay_seconds + 7) + [True] * 100
+
+    state_changes = []
+    FishingBot().run(on_state_change=state_changes.append)
+
+    assert FishingState.LOOTING in state_changes
+    reel_index = order.index("reel")
+    second_cast_index = [i for i, item in enumerate(order) if item == "cast"][1]
+    assert ("sleep", loot_wait_seconds) in order[reel_index:second_cast_index]

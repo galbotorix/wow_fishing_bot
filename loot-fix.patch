@@ -1,0 +1,107 @@
+diff --git a/core/fishing_bot.py b/core/fishing_bot.py
+index a536ee7..335cce0 100644
+--- a/core/fishing_bot.py
++++ b/core/fishing_bot.py
+@@ -10,7 +10,7 @@ from core.screenshot_capture import ScreenshotCapture
+ from support.app_logging import get_logger
+ from support.constants import max_state_machine_iterations, splash_watch_timeout_seconds, \
+     cast_animation_wait_seconds, max_bobber_search_attempts, bobber_search_retry_delay_seconds, \
+-    wait_time_between_screenshots, save_splash_watch_screenshots, start_delay_seconds, bobber_motion_check_delay_seconds, \
++    wait_time_between_screenshots, save_splash_watch_screenshots, loot_wait_seconds, start_delay_seconds, bobber_motion_check_delay_seconds, \
+     clear_screenshots_before_each_cast as default_clear_screenshots_before_each_cast
+ 
+ logger = get_logger(__name__)
+@@ -205,9 +205,17 @@ class FishingBot:
+                 elif state == FishingState.REELING:
+                     assert bobber_position is not None  # guaranteed by WAITING_FOR_BOBBER
+                     controls_interaction.reel_in_bobber(bobber_position)
+-                    # Shift+right-click reels in and auto-loots in one action, so
+-                    # there's no separate LOOTING step needed for now.
+-                    # TODO: re-introduce LOOTING + bag-full check once needed.
++                    state = FishingState.LOOTING
++
++                elif state == FishingState.LOOTING:
++                    # Shift+right-click reels in and auto-loots in one action,
++                    # but the loot takes a moment to be picked up. Casting
++                    # again before it's done cancels the loot window and the
++                    # fish is lost, so wait before going back to IDLE (which
++                    # casts immediately).
++                    # TODO: bag-full check once OCR is implemented.
++                    logger.info("Waiting %.1fs for auto-loot to finish before recasting.", loot_wait_seconds)
++                    sleep(loot_wait_seconds)
+                     state = FishingState.IDLE
+             except Exception:
+                 logger.exception("Unexpected error while handling state %s; aborting.", state.name)
+diff --git a/support/constants.py b/support/constants.py
+index 14b75d9..b135e44 100644
+--- a/support/constants.py
++++ b/support/constants.py
+@@ -219,18 +219,22 @@ reel_click_modifier_key = "shift"  # held during the reel click to trigger WoW's
+ reel_modifier_press_delay = 0.05  # held after keyDown(shift), before the mouse click starts
+ reel_click_hold_duration = 0.04  # how long the mouse button itself stays down
+ reel_modifier_release_delay = 0.05  # held after the click ends, before keyUp(shift)
+-# WoW's clickable hitbox for the fishing bobber is notoriously tiny (a
+-# few pixels), while the detected position is only the center of the
+-# visual template match, which can be slightly offset from the real
+-# interactable point. A small cross spray around the detected position
+-# greatly increases the odds of landing on the bobber -- any clicks
+-# that miss just land harmlessly on water. Trimmed to a tighter 5-point
+-# cross (center + 4 adjacent points) now that looting is confirmed
+-# working, since the 9-point version made each reel-in take ~5s.
++# Where to Shift+right-click, relative to the detected bobber position.
++# ONE click by default: with the current bobber template the detected
++# position sits right on the bobber, and extra clicks are harmful -- the
++# first click that lands opens the loot, and every further Shift+right-
++# click interrupts auto-loot so the fish gets stuck in the loot window.
++# Only add more points (e.g. (0, -4), (0, 4), (-4, 0), (4, 0)) if the
++# single click keeps missing the bobber.
+ reel_click_spray_offsets = [
+-    (0, 0), (0, -4), (0, 4), (-4, 0), (4, 0),
++    (0, 0),
+ ]
+ reel_click_spray_delay = 0.05  # pause between consecutive spray click attempts
++# Pause after the reel-in click before casting again. Auto-loot needs time:
++# in a real capture the loot window opened ~0.4s after the click and
++# closed ~0.4s later. Casting again before that cancels the loot, so the
++# fish is left behind. 2s leaves room for server lag.
++loot_wait_seconds = 2.0
+ # After looting, park the mouse cursor out of the way so it doesn't
+ # linger over the water -- an idle cursor can show a tooltip/highlight
+ # over nearby objects, and keeping it away from the capture area avoids
+diff --git a/tests/test_core/test_fishing_bot.py b/tests/test_core/test_fishing_bot.py
+index 9a4abdc..cbdfd66 100644
+--- a/tests/test_core/test_fishing_bot.py
++++ b/tests/test_core/test_fishing_bot.py
+@@ -347,3 +347,32 @@ def test_stops_after_max_state_machine_iterations_as_last_resort(mocks, monkeypa
+ 
+     # 5 iterations total; state stays in WAITING_FOR_BOBBER after CASTING+IDLE.
+     assert mocks["object_detection"].find_bobber.call_count <= 5
++
++
++def test_waits_for_loot_before_recasting(mocks, mock_sleep):
++    """
++    After the reel-in click the bot must go through LOOTING and sleep
++    loot_wait_seconds BEFORE pressing the cast key again -- recasting
++    straight away cancels auto-loot and leaves the fish behind.
++    """
++    from support.constants import loot_wait_seconds
++
++    mocks["object_detection"].find_bobber.return_value = (10, 20)
++    mocks["object_detection"].detect_splash.return_value = True
++
++    order = []
++    mocks["controls_interaction"].reel_in_bobber.side_effect = lambda *a: order.append("reel")
++    mocks["controls_interaction"].cast_fishing_line.side_effect = lambda *a: order.append("cast")
++    mock_sleep.side_effect = lambda seconds: order.append(("sleep", seconds))
++
++    # IDLE, CASTING, WAITING_FOR_BOBBER, WATCHING_FOR_SPLASH, REELING,
++    # LOOTING, then IDLE again (second cast), then stop.
++    mocks["emergency_stop"].is_stop_requested.side_effect = [False] * (start_delay_seconds + 7) + [True] * 100
++
++    state_changes = []
++    FishingBot().run(on_state_change=state_changes.append)
++
++    assert FishingState.LOOTING in state_changes
++    reel_index = order.index("reel")
++    second_cast_index = [i for i, item in enumerate(order) if item == "cast"][1]
++    assert ("sleep", loot_wait_seconds) in order[reel_index:second_cast_index]

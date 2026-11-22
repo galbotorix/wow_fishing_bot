@@ -10,7 +10,7 @@ from core.screenshot_capture import ScreenshotCapture
 from support.app_logging import get_logger
 from support.constants import max_state_machine_iterations, splash_watch_timeout_seconds, \
     cast_animation_wait_seconds, max_bobber_search_attempts, bobber_search_retry_delay_seconds, \
-    wait_time_between_screenshots, save_splash_watch_screenshots, start_delay_seconds, bobber_motion_check_delay_seconds, \
+    wait_time_between_screenshots, save_splash_watch_screenshots, loot_wait_seconds, start_delay_seconds, bobber_motion_check_delay_seconds, \
     clear_screenshots_before_each_cast as default_clear_screenshots_before_each_cast
 
 logger = get_logger(__name__)
@@ -205,9 +205,17 @@ class FishingBot:
                 elif state == FishingState.REELING:
                     assert bobber_position is not None  # guaranteed by WAITING_FOR_BOBBER
                     controls_interaction.reel_in_bobber(bobber_position)
-                    # Shift+right-click reels in and auto-loots in one action, so
-                    # there's no separate LOOTING step needed for now.
-                    # TODO: re-introduce LOOTING + bag-full check once needed.
+                    state = FishingState.LOOTING
+
+                elif state == FishingState.LOOTING:
+                    # Shift+right-click reels in and auto-loots in one action,
+                    # but the loot takes a moment to be picked up. Casting
+                    # again before it's done cancels the loot window and the
+                    # fish is lost, so wait before going back to IDLE (which
+                    # casts immediately).
+                    # TODO: bag-full check once OCR is implemented.
+                    logger.info("Waiting %.1fs for auto-loot to finish before recasting.", loot_wait_seconds)
+                    sleep(loot_wait_seconds)
                     state = FishingState.IDLE
             except Exception:
                 logger.exception("Unexpected error while handling state %s; aborting.", state.name)

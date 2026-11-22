@@ -219,18 +219,22 @@ reel_click_modifier_key = "shift"  # held during the reel click to trigger WoW's
 reel_modifier_press_delay = 0.05  # held after keyDown(shift), before the mouse click starts
 reel_click_hold_duration = 0.04  # how long the mouse button itself stays down
 reel_modifier_release_delay = 0.05  # held after the click ends, before keyUp(shift)
-# WoW's clickable hitbox for the fishing bobber is notoriously tiny (a
-# few pixels), while the detected position is only the center of the
-# visual template match, which can be slightly offset from the real
-# interactable point. A small cross spray around the detected position
-# greatly increases the odds of landing on the bobber -- any clicks
-# that miss just land harmlessly on water. Trimmed to a tighter 5-point
-# cross (center + 4 adjacent points) now that looting is confirmed
-# working, since the 9-point version made each reel-in take ~5s.
+# Where to Shift+right-click, relative to the detected bobber position.
+# ONE click by default: with the current bobber template the detected
+# position sits right on the bobber, and extra clicks are harmful -- the
+# first click that lands opens the loot, and every further Shift+right-
+# click interrupts auto-loot so the fish gets stuck in the loot window.
+# Only add more points (e.g. (0, -4), (0, 4), (-4, 0), (4, 0)) if the
+# single click keeps missing the bobber.
 reel_click_spray_offsets = [
-    (0, 0), (0, -4), (0, 4), (-4, 0), (4, 0),
+    (0, 0),
 ]
 reel_click_spray_delay = 0.05  # pause between consecutive spray click attempts
+# Pause after the reel-in click before casting again. Auto-loot needs time:
+# in a real capture the loot window opened ~0.4s after the click and
+# closed ~0.4s later. Casting again before that cancels the loot, so the
+# fish is left behind. 2s leaves room for server lag.
+loot_wait_seconds = 2.0
 # After looting, park the mouse cursor out of the way so it doesn't
 # linger over the water -- an idle cursor can show a tooltip/highlight
 # over nearby objects, and keeping it away from the capture area avoids
