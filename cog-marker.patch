@@ -1,0 +1,328 @@
+diff --git a/assets/templates/bobber_marker.png b/assets/templates/bobber_marker.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..8401953c447fe379de05227ccdeab4d8588deb0f
+GIT binary patch
+literal 1438
+zcmV;P1!4M$P)<h;3K|Lk000e1NJLTq000&M000&U0ssI2OV;~r000GLNkl<ZI1vrO
+zZEO=|902g=fA`#7dw0FQt!1=sz#KxDBn_g2B@QKGqMHJOWMc!PB0-EF&^Y2SVu*{F
+zfFF#S5R8d2647BdL=<0`6b1rHD^SZ`8E)&s)@}6VuGf2c9{2k}TkAT;#yrmx7CGiH
+zl;b#)5>3-4RaH?Ghsy*2T)?WT0<Z`nfwK`pdDCMUhH6>R*1Aq$oCqOaa$t;E+psJv
+zs}>v%$CYHVqoV_HdAHj=dwaIMy*(0H;dZ+P&Ym+{lr>FbMG^Kktt}e1!{GoHBuN@e
+z#}PuZ?;!vXOXqg)-t83pZoj`+QjZ)taxKM&LLp=g&Iv85lO)M3>d@Y@&Lm)(W?){R
+zr>Ez&*SD}N`_{hCd7eM^>9%AtdGSI5Aw)T7XlQu*K(}ESU7d$|dwbve;8;t`^T@K{
+z<>qHumIZ)o@$aM2FNDlpP1FAR^QK`KjKz$Mj97U!91c%rGCrTLDsq1$5}8hCj~_q2
+zX3e9A4<Ehn;YZ=+=4Ua+V`F36wm(=?Q)As3?(FOoSa)S*<xpw}V;qnbRaG6LSSS=&
+zFV=NkWEDx0{C=;;<2i7&8+LBnK&df0I@+=GsZ=U8m>6)mT!vjJl}fyysjsj1mhp4O
+z{vAmq5~jfkf*=ZVp-?Cfg;<u29zO%Gw64dP5<-%vPqnl>W@jyq<8o?d>C&Z*FK#Gh
+zvsfsNkB{>@qwD%aIvbD2b=ANa3r^=Be_X9w>4M!atfn9Xz`0YuM57&}u^XvWD!5|)
+z#*G^Ri-Zu)$mVjnWbfs0IE;nT*x1-_U434!7resRvsd=C)xxfAwf%z=)z#H+?p!-H
+zHI+QoYgyK=_g|ZtnJEh`OkThKQ|DK*EZ2k=R8&;3yiN!?_v3IrpGO`ZV?6ZVWjNfv
+zY59D^<#OFiLtkHCI3&(_V$)hm>8$~M&z}9ueW;=$aK3-4t!;;2oaH!<7Tw+5-9UXD
+z$MH@VbiC29v`h^I0+)Wjg)vrKc0)r0<3&!V^XqSVuU@^{`uM}4P^hT54j%k?f7?cu
+zWqA^eMx)gB000&wcz^G!^%b|Lrl!(EwkV2ubE2`akr8GUMfvXA3z8%?t(*q{17_Kw
+zLq`w3vpt*5%AR>APMiQXBnW~=ZTRfNeXGm+2_ZMGOj?$uk;zCTvgiRtmgU&Ffs-eH
+zKDguYVzHR>)#UT}MFE~tN*HHXR~KUDGjk*-Y=3FT^;l<JU7b%G;5aTQ`%TkqYJEi4
+zb+c5Qo}NDZ<!MUMyL;QKs;b6so@E#&m*Xy8yod$Y`1rUMsD{l=TV*Sq$z+V-o9oxt
+zV*_+uU%ARxUS5ufWt!$aTpkPtM+fhSqUfP_8HPzDM$_rENpL!yj@`+^rsfs^AcTzk
+zdhDZ*Ub=EB=5#u3)2ywn4F!p+s=yM<vK(Fs&9OZg;~%~~i!sjg{FyU<qnb7FT+>#B
+zkYN~mpYy7!+IRjRN-2YoX_^bd?2;u*L|I@MrihH{>gr1uQn6U9Oj=-BR#6lsN&2K`
+z0yZ?a5<-&6<Xh{w!NI}%l!{<5IDU5$A;eKr6h$4VD2nsTLdj&3g2D4VF-(lHDEnq+
+zW{&oZz%yH#0l+j(W%#=%pIlAuQQNk2T2WQiP??7iQeqIL6jP2;n$2ejAwI>8G5+_~
+zu%akG58Ckb=4Q*Xc%FBYLOdSdwR!dQ^mO#scx7c}Z745E5=(eWspWJUhLM~U5{X3P
+z6RR{$o6sGpRI2Ww2jQtrO#r|!jGxgFLPM9oFBGUVP#FjWs<`3Bix&%w2mrj_-{0SV
+sB6fS>!iDPeolGWY%E4vJmbrNPKUrL>2TYg%h5!Hn07*qoM6N<$g3+h3CjbBd
+
+literal 0
+HcmV?d00001
+
+diff --git a/core/fishing_bot.py b/core/fishing_bot.py
+index 63b98a5..281063d 100644
+--- a/core/fishing_bot.py
++++ b/core/fishing_bot.py
+@@ -127,6 +127,9 @@ class FishingBot:
+                 if state == FishingState.IDLE:
+                     if clear_screenshots_before_each_cast:
+                         screenshot_capture.clear_screenshots()
++                    # Keep the cursor off the water: it can cover the addon's
++                    # cog (or the bobber) and spoil detection.
++                    controls_interaction.park_mouse()
+                     controls_interaction.cast_fishing_line()
+                     object_detection.reset_splash_watch()
+                     splash_watch_attempts = 0
+@@ -163,6 +166,8 @@ class FishingBot:
+                             logger.warning("Rejecting bobber candidate at %s: area is static (likely a "
+                                             "false positive, not real water).", candidate_position)
+                             candidate_position = None
++                        elif str(getattr(object_detection, "last_bobber_source", "") or "").startswith("marker"):
++                            pass  # found via the addon's cog: strong evidence on its own
+                         elif not object_detection.has_bobber_feather_colors(screenshot_frame, candidate_position):
+                             logger.warning("Rejecting bobber candidate at %s: missing feather colors "
+                                             "(likely a false positive).", candidate_position)
+diff --git a/core/object_detection.py b/core/object_detection.py
+index c21cd53..5c691aa 100644
+--- a/core/object_detection.py
++++ b/core/object_detection.py
+@@ -8,6 +8,9 @@ from core.screenshot_frame import ScreenshotFrame
+ from support.app_error_handling import TemplateNotFoundError, handle_errors
+ from support.app_logging import get_logger
+ from support.constants import assets_dir_name, templates_dir_name, bobber_template_file_name, \
++    use_bobber_marker, bobber_marker_template_file_name, bobber_marker_match_threshold, bobber_marker_scales, \
++    bobber_offset_from_marker, bobber_search_window_below_marker, bobber_near_marker_match_threshold, \
++    bobber_near_marker_max_distance, \
+     bobber_match_threshold, bobber_match_scales, bobber_search_region_x_fraction, \
+     bobber_search_region_y_fraction, bobber_motion_check_radius, \
+     bobber_motion_min_diff, bobber_color_check_radius, bobber_color_min_saturation, bobber_color_min_value, \
+@@ -48,6 +51,15 @@ class ObjectDetection:
+         self.bobber_template_gray: Optional[np.ndarray] = self.__load_template_gray(
+             templates_dir / bobber_template_file_name
+         )
++        self.bobber_marker_template_gray: Optional[np.ndarray] = self.__load_template_gray(
++            templates_dir / bobber_marker_template_file_name
++        ) if use_bobber_marker else None
++
++        # How the last find_bobber() result was obtained: "marker+template",
++        # "marker", "template", "color" (or None if not found).
++        self.last_bobber_source: Optional[str] = None
++        # Where the last find_bobber_marker() found the cog (screen coords), if any.
++        self.last_marker_position: Optional[tuple[int, int]] = None
+ 
+         # Height in pixels of the last template match found by find_bobber()
+         # (None if unknown, e.g. found via the color fallback). Used to scale
+@@ -165,6 +177,87 @@ class ObjectDetection:
+ 
+         return selected
+ 
++    def find_bobber_marker(self, frame: ScreenshotFrame,
++                           frame_gray_full: Optional[np.ndarray] = None) -> Optional[tuple[tuple[int, int], float]]:
++        """
++        Finds the addon's cog icon drawn above the bobber, anywhere on the
++        screen. Returns ((x, y) in screen coordinates, matched scale) or None.
++        """
++        self.last_marker_position = None
++        if self.bobber_marker_template_gray is None:
++            return None
++        if frame_gray_full is None:
++            frame_gray_full = cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY)
++
++        best = (-1.0, None, 1.0, (0, 0))
++        for scale in bobber_marker_scales:
++            template = cv2.resize(self.bobber_marker_template_gray, None, fx=scale, fy=scale,
++                                  interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
++            if template.shape[0] > frame_gray_full.shape[0] or template.shape[1] > frame_gray_full.shape[1]:
++                continue
++            result = cv2.matchTemplate(frame_gray_full, template, cv2.TM_CCOEFF_NORMED)
++            _, max_val, _, max_loc = cv2.minMaxLoc(result)
++            if max_val > best[0]:
++                best = (max_val, max_loc, scale, template.shape[:2])
++
++        score, loc, scale, (h, w) = best
++        if loc is None or score < bobber_marker_match_threshold:
++            logger.info("Bobber marker (cog) not found: best score %.3f < %.3f.", max(score, 0.0),
++                        bobber_marker_match_threshold)
++            return None
++        position = (frame.origin[0] + loc[0] + w // 2, frame.origin[1] + loc[1] + h // 2)
++        self.last_marker_position = position
++        logger.info("Bobber marker (cog) found at screen %s, score %.3f, scale %.1f.", position, score, scale)
++        return position, scale
++
++    def __find_bobber_below_marker(self, frame: ScreenshotFrame, frame_gray_full: np.ndarray,
++                                   marker_position: tuple[int, int], marker_scale: float) -> tuple[int, int]:
++        """
++        Looks for the bobber image in a small window just below the cog,
++        with a looser threshold (the cog already pins it down). If even
++        that fails -- e.g. the bobber is half under a wave -- uses the
++        measured average offset from the cog, which is close enough to
++        watch for the bite.
++        """
++        mx = marker_position[0] - frame.origin[0]
++        my = marker_position[1] - frame.origin[1]
++        left, right, top, bottom = (int(round(v * marker_scale)) for v in bobber_search_window_below_marker)
++        height, width = frame_gray_full.shape[:2]
++        x0, x1 = max(0, mx + left), min(width, mx + right)
++        y0, y1 = max(0, my + top), min(height, my + bottom)
++        window = frame_gray_full[y0:y1, x0:x1]
++
++        best = (-1.0, None, (0, 0))
++        if self.bobber_template_gray is not None and window.size:
++            for scale in bobber_match_scales:
++                template = cv2.resize(self.bobber_template_gray, None, fx=scale, fy=scale)
++                if template.shape[0] > window.shape[0] or template.shape[1] > window.shape[1]:
++                    continue
++                _, max_val, _, max_loc = cv2.minMaxLoc(cv2.matchTemplate(window, template, cv2.TM_CCOEFF_NORMED))
++                if max_val > best[0]:
++                    best = (max_val, max_loc, template.shape[:2])
++
++        dx, dy = bobber_offset_from_marker
++        usual = (marker_position[0] + int(round(dx * marker_scale)), marker_position[1] + int(round(dy * marker_scale)))
++
++        score, loc, (th, tw) = best
++        position = None
++        if loc is not None:
++            position = (frame.origin[0] + x0 + loc[0] + tw // 2, frame.origin[1] + y0 + loc[1] + th // 2)
++        close_enough = position is not None and max(abs(position[0] - usual[0]), abs(position[1] - usual[1])) \
++            <= bobber_near_marker_max_distance * marker_scale
++        if close_enough and score >= bobber_near_marker_match_threshold:
++            self.last_bobber_height = int(th)
++            self.last_bobber_source = "marker+template"
++            logger.info("Bobber found below the cog at screen %s, score %.3f, size %dpx tall.", position, score, th)
++            return position
++
++        self.last_bobber_height = int(round(45 * marker_scale))  # typical bobber size seen with the cog
++        self.last_bobber_source = "marker"
++        logger.info("Bobber image not clear below the cog (best %.3f at %s); using the usual offset: %s.",
++                    max(score, 0.0), position, usual)
++        return usual
++
+     @handle_errors()
+     def find_bobber(self, frame: ScreenshotFrame) -> Optional[tuple[int, int]]:
+         """
+@@ -192,6 +285,13 @@ class ObjectDetection:
+             return None
+ 
+         frame_gray_full = cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY)
++        self.last_bobber_source = None
++
++        # Preferred: find the addon's cog marker, then the bobber just below it.
++        marker = self.find_bobber_marker(frame, frame_gray_full)
++        if marker is not None:
++            return self.__find_bobber_below_marker(frame, frame_gray_full, *marker)
++
+         frame_gray = frame_gray_full[y_start:y_end, x_start:x_end]
+         template_height, template_width = self.bobber_template_gray.shape[:2]
+ 
+@@ -216,6 +316,7 @@ class ObjectDetection:
+ 
+         if best_val >= bobber_match_threshold:
+             self.last_bobber_height = int(best_matched_height)
++            self.last_bobber_source = "template"
+             logger.info("Bobber found at screen (%d, %d), score %.3f (threshold %.3f), size %dpx tall",
+                         best_screen_x, best_screen_y, best_val, bobber_match_threshold, best_matched_height)
+             return best_screen_x, best_screen_y
+@@ -238,6 +339,7 @@ class ObjectDetection:
+             fallback_position = self.__find_bobber_by_color(frame, x_start, x_end, y_start, y_end, seed_position)
+             if fallback_position is not None:
+                 self.last_bobber_height = int(matched_height)
++                self.last_bobber_source = "color"
+                 logger.info("Bobber found via color-blob fallback at screen %s (seed score %.3f).",
+                             fallback_position, score)
+                 return fallback_position
+diff --git a/support/constants.py b/support/constants.py
+index 1e13a55..cf3f068 100644
+--- a/support/constants.py
++++ b/support/constants.py
+@@ -80,6 +80,27 @@ bobber_motion_min_diff = 15  # min per-pixel BGR-sum difference required to call
+ assets_dir_name = "assets"
+ templates_dir_name = "templates"
+ bobber_template_file_name = "bobber.jpg"  # cropped reference image of the bobber icon/float
++
++# Bobber marker: a fishing addon draws a small cog icon above the bobber.
++# Being a flat UI icon, it looks the same at any distance, in fog, and
++# through RustDesk, so it's far easier to find than the bobber itself. When
++# it's on screen the bot finds it first, then looks for the bobber just
++# below it. Without the addon (no cog found) the bot falls back to finding
++# the bobber directly.
++use_bobber_marker = True
++bobber_marker_template_file_name = "bobber_marker.png"
++# Measured on 3 captures: a real cog scores 0.73-1.00 (0.73 = over bright
++# orange shore), anything else on screen <= 0.66.
++bobber_marker_match_threshold = 0.70
++bobber_marker_scales = [0.8, 0.9, 1.0, 1.1, 1.2]  # RustDesk shrinks it to ~0.9
++# Where the bobber sits relative to the cog (pixels at marker scale 1.0),
++# measured over 164 frames: dx -28..-13 (median -17), dy +80..+116 (median +96).
++bobber_offset_from_marker = (-17, 96)
++# Window below the cog to search for the bobber image itself: (left, right, top, bottom) offsets.
++bobber_search_window_below_marker = (-95, 65, 35, 195)
++bobber_near_marker_match_threshold = 0.50  # looser than 0.70: the cog already pins it down (real: 0.47-0.81, median 0.62)
++bobber_near_marker_max_distance = 45  # ...and the match must be within this many pixels of the usual offset,
++                                      # otherwise the usual offset itself is used (accurate to ~15px)
+ bobber_match_threshold = 0.70  # cv2.matchTemplate TM_CCOEFF_NORMED score required to accept a match
+ # The bobber's apparent on-screen size varies with camera zoom, which the
+ # player can change between casts/sessions. Instead of needing a template
+diff --git a/tests/test_core/test_fishing_bot.py b/tests/test_core/test_fishing_bot.py
+index 44684e7..63b4704 100644
+--- a/tests/test_core/test_fishing_bot.py
++++ b/tests/test_core/test_fishing_bot.py
+@@ -413,3 +413,15 @@ def test_does_not_resolve_game_window_if_stopped_during_countdown(mocks):
+     FishingBot().run()
+ 
+     mocks["resolve_game_window"].assert_not_called()
++
++
++def test_parks_mouse_before_every_cast(mocks):
++    """The cursor can cover the addon's cog or the bobber, so it's moved away before each cast."""
++    order = []
++    mocks["controls_interaction"].park_mouse.side_effect = lambda *a: order.append("park")
++    mocks["controls_interaction"].cast_fishing_line.side_effect = lambda *a: order.append("cast")
++    mocks["emergency_stop"].is_stop_requested.side_effect = [False] * (start_delay_seconds + 2) + [True] * 100
++
++    FishingBot().run()
++
++    assert order[:2] == ["park", "cast"]
+diff --git a/tests/test_core/test_object_detection.py b/tests/test_core/test_object_detection.py
+index 9619845..d0157bb 100644
+--- a/tests/test_core/test_object_detection.py
++++ b/tests/test_core/test_object_detection.py
+@@ -675,3 +675,63 @@ def test_feather_check_rejects_dull_orange_shore(objects):
+     dull = ScreenshotFrame(image=patch, timestamp=0.0, origin=(0, 0))
+ 
+     assert object_detection.has_bobber_feather_colors(dull, (40, 40)) is False
++
++
++# --- Addon cog marker above the bobber -----------------------------------------
++
++def test_finds_cog_marker_and_bobber_below_it_through_rustdesk(objects):
++    object_detection = objects['object_detection']
++    frame = load_frame("screenshot_rustdesk_bobber_low.jpg", FIXTURES_DIR)
++
++    marker = object_detection.find_bobber_marker(frame)
++    position = object_detection.find_bobber(frame)
++
++    assert marker is not None
++    (cog_x, cog_y), _scale = marker
++    assert abs(cog_x - 855) <= 6 and abs(cog_y - 615) <= 6
++    assert object_detection.last_bobber_source.startswith("marker")
++    assert abs(position[0] - 835) <= 25 and abs(position[1] - 705) <= 25  # the cork is ~100px below the cog
++
++
++def test_finds_cog_on_gaming_pc_screenshot(objects):
++    """The addon was already running in the first (gaming PC) capture too."""
++    object_detection = objects['object_detection']
++    frame = load_frame("screenshot_with_bobber_no_splash.jpg")
++
++    (cog_x, cog_y), _ = object_detection.find_bobber_marker(frame)
++    position = object_detection.find_bobber(frame)
++
++    assert abs(cog_x - 1038) <= 6 and abs(cog_y - 67) <= 6
++    assert object_detection.last_bobber_source.startswith("marker")
++    assert abs(position[0] - KNOWN_BOBBER_POSITION[0]) <= 25 and abs(position[1] - KNOWN_BOBBER_POSITION[1]) <= 25
++
++
++def test_falls_back_to_bobber_image_without_the_addon(objects):
++    """With no cog on screen (addon not installed), the bobber is still found directly."""
++    object_detection = objects['object_detection']
++    frame = load_frame("screenshot_with_bobber_no_splash.jpg")
++    no_cog = frame.image.copy()
++    no_cog[50:85, 1020:1056] = no_cog[50:85, 1100:1136]   # paint sky over the cog
++    frame = ScreenshotFrame(image=no_cog, timestamp=0.0, origin=(0, 0))
++
++    assert object_detection.find_bobber_marker(frame) is None
++    position = object_detection.find_bobber(frame)
++    assert object_detection.last_bobber_source == "template"
++    assert position == KNOWN_BOBBER_POSITION
++
++
++def test_uses_usual_offset_when_bobber_image_is_unclear_below_cog(objects):
++    """If the bobber can't be matched below the cog, use the measured average offset instead of giving up."""
++    object_detection = objects['object_detection']
++    frame = load_frame("screenshot_rustdesk_bobber_low.jpg", FIXTURES_DIR)
++    hidden = frame.image.copy()
++    hidden[650:780, 760:960] = hidden[450:580, 760:960]   # paint plain water over the bobber
++    frame = ScreenshotFrame(image=hidden, timestamp=0.0, origin=(0, 0))
++
++    position = object_detection.find_bobber(frame)
++
++    assert object_detection.last_bobber_source == "marker"
++    from support.constants import bobber_offset_from_marker
++    (cog_x, cog_y), scale = object_detection.find_bobber_marker(frame)
++    assert position == (cog_x + round(bobber_offset_from_marker[0] * scale),
++                        cog_y + round(bobber_offset_from_marker[1] * scale))

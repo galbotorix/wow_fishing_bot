@@ -675,3 +675,63 @@ def test_feather_check_rejects_dull_orange_shore(objects):
     dull = ScreenshotFrame(image=patch, timestamp=0.0, origin=(0, 0))
 
     assert object_detection.has_bobber_feather_colors(dull, (40, 40)) is False
+
+
+# --- Addon cog marker above the bobber -----------------------------------------
+
+def test_finds_cog_marker_and_bobber_below_it_through_rustdesk(objects):
+    object_detection = objects['object_detection']
+    frame = load_frame("screenshot_rustdesk_bobber_low.jpg", FIXTURES_DIR)
+
+    marker = object_detection.find_bobber_marker(frame)
+    position = object_detection.find_bobber(frame)
+
+    assert marker is not None
+    (cog_x, cog_y), _scale = marker
+    assert abs(cog_x - 855) <= 6 and abs(cog_y - 615) <= 6
+    assert object_detection.last_bobber_source.startswith("marker")
+    assert abs(position[0] - 835) <= 25 and abs(position[1] - 705) <= 25  # the cork is ~100px below the cog
+
+
+def test_finds_cog_on_gaming_pc_screenshot(objects):
+    """The addon was already running in the first (gaming PC) capture too."""
+    object_detection = objects['object_detection']
+    frame = load_frame("screenshot_with_bobber_no_splash.jpg")
+
+    (cog_x, cog_y), _ = object_detection.find_bobber_marker(frame)
+    position = object_detection.find_bobber(frame)
+
+    assert abs(cog_x - 1038) <= 6 and abs(cog_y - 67) <= 6
+    assert object_detection.last_bobber_source.startswith("marker")
+    assert abs(position[0] - KNOWN_BOBBER_POSITION[0]) <= 25 and abs(position[1] - KNOWN_BOBBER_POSITION[1]) <= 25
+
+
+def test_falls_back_to_bobber_image_without_the_addon(objects):
+    """With no cog on screen (addon not installed), the bobber is still found directly."""
+    object_detection = objects['object_detection']
+    frame = load_frame("screenshot_with_bobber_no_splash.jpg")
+    no_cog = frame.image.copy()
+    no_cog[50:85, 1020:1056] = no_cog[50:85, 1100:1136]   # paint sky over the cog
+    frame = ScreenshotFrame(image=no_cog, timestamp=0.0, origin=(0, 0))
+
+    assert object_detection.find_bobber_marker(frame) is None
+    position = object_detection.find_bobber(frame)
+    assert object_detection.last_bobber_source == "template"
+    assert position == KNOWN_BOBBER_POSITION
+
+
+def test_uses_usual_offset_when_bobber_image_is_unclear_below_cog(objects):
+    """If the bobber can't be matched below the cog, use the measured average offset instead of giving up."""
+    object_detection = objects['object_detection']
+    frame = load_frame("screenshot_rustdesk_bobber_low.jpg", FIXTURES_DIR)
+    hidden = frame.image.copy()
+    hidden[650:780, 760:960] = hidden[450:580, 760:960]   # paint plain water over the bobber
+    frame = ScreenshotFrame(image=hidden, timestamp=0.0, origin=(0, 0))
+
+    position = object_detection.find_bobber(frame)
+
+    assert object_detection.last_bobber_source == "marker"
+    from support.constants import bobber_offset_from_marker
+    (cog_x, cog_y), scale = object_detection.find_bobber_marker(frame)
+    assert position == (cog_x + round(bobber_offset_from_marker[0] * scale),
+                        cog_y + round(bobber_offset_from_marker[1] * scale))

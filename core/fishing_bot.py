@@ -127,6 +127,9 @@ class FishingBot:
                 if state == FishingState.IDLE:
                     if clear_screenshots_before_each_cast:
                         screenshot_capture.clear_screenshots()
+                    # Keep the cursor off the water: it can cover the addon's
+                    # cog (or the bobber) and spoil detection.
+                    controls_interaction.park_mouse()
                     controls_interaction.cast_fishing_line()
                     object_detection.reset_splash_watch()
                     splash_watch_attempts = 0
@@ -163,6 +166,8 @@ class FishingBot:
                             logger.warning("Rejecting bobber candidate at %s: area is static (likely a "
                                             "false positive, not real water).", candidate_position)
                             candidate_position = None
+                        elif str(getattr(object_detection, "last_bobber_source", "") or "").startswith("marker"):
+                            pass  # found via the addon's cog: strong evidence on its own
                         elif not object_detection.has_bobber_feather_colors(screenshot_frame, candidate_position):
                             logger.warning("Rejecting bobber candidate at %s: missing feather colors "
                                             "(likely a false positive).", candidate_position)

@@ -8,6 +8,9 @@ from core.screenshot_frame import ScreenshotFrame
 from support.app_error_handling import TemplateNotFoundError, handle_errors
 from support.app_logging import get_logger
 from support.constants import assets_dir_name, templates_dir_name, bobber_template_file_name, \
+    use_bobber_marker, bobber_marker_template_file_name, bobber_marker_match_threshold, bobber_marker_scales, \
+    bobber_offset_from_marker, bobber_search_window_below_marker, bobber_near_marker_match_threshold, \
+    bobber_near_marker_max_distance, \
     bobber_match_threshold, bobber_match_scales, bobber_search_region_x_fraction, \
     bobber_search_region_y_fraction, bobber_motion_check_radius, \
     bobber_motion_min_diff, bobber_color_check_radius, bobber_color_min_saturation, bobber_color_min_value, \
@@ -48,6 +51,15 @@ class ObjectDetection:
         self.bobber_template_gray: Optional[np.ndarray] = self.__load_template_gray(
             templates_dir / bobber_template_file_name
         )
+        self.bobber_marker_template_gray: Optional[np.ndarray] = self.__load_template_gray(
+            templates_dir / bobber_marker_template_file_name
+        ) if use_bobber_marker else None
+
+        # How the last find_bobber() result was obtained: "marker+template",
+        # "marker", "template", "color" (or None if not found).
+        self.last_bobber_source: Optional[str] = None
+        # Where the last find_bobber_marker() found the cog (screen coords), if any.
+        self.last_marker_position: Optional[tuple[int, int]] = None
 
         # Height in pixels of the last template match found by find_bobber()
         # (None if unknown, e.g. found via the color fallback). Used to scale
@@ -165,6 +177,87 @@ class ObjectDetection:
 
         return selected
 
+    def find_bobber_marker(self, frame: ScreenshotFrame,
+                           frame_gray_full: Optional[np.ndarray] = None) -> Optional[tuple[tuple[int, int], float]]:
+        """
+        Finds the addon's cog icon drawn above the bobber, anywhere on the
+        screen. Returns ((x, y) in screen coordinates, matched scale) or None.
+        """
+        self.last_marker_position = None
+        if self.bobber_marker_template_gray is None:
+            return None
+        if frame_gray_full is None:
+            frame_gray_full = cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY)
+
+        best = (-1.0, None, 1.0, (0, 0))
+        for scale in bobber_marker_scales:
+            template = cv2.resize(self.bobber_marker_template_gray, None, fx=scale, fy=scale,
+                                  interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
+            if template.shape[0] > frame_gray_full.shape[0] or template.shape[1] > frame_gray_full.shape[1]:
+                continue
+            result = cv2.matchTemplate(frame_gray_full, template, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            if max_val > best[0]:
+                best = (max_val, max_loc, scale, template.shape[:2])
+
+        score, loc, scale, (h, w) = best
+        if loc is None or score < bobber_marker_match_threshold:
+            logger.info("Bobber marker (cog) not found: best score %.3f < %.3f.", max(score, 0.0),
+                        bobber_marker_match_threshold)
+            return None
+        position = (frame.origin[0] + loc[0] + w // 2, frame.origin[1] + loc[1] + h // 2)
+        self.last_marker_position = position
+        logger.info("Bobber marker (cog) found at screen %s, score %.3f, scale %.1f.", position, score, scale)
+        return position, scale
+
+    def __find_bobber_below_marker(self, frame: ScreenshotFrame, frame_gray_full: np.ndarray,
+                                   marker_position: tuple[int, int], marker_scale: float) -> tuple[int, int]:
+        """
+        Looks for the bobber image in a small window just below the cog,
+        with a looser threshold (the cog already pins it down). If even
+        that fails -- e.g. the bobber is half under a wave -- uses the
+        measured average offset from the cog, which is close enough to
+        watch for the bite.
+        """
+        mx = marker_position[0] - frame.origin[0]
+        my = marker_position[1] - frame.origin[1]
+        left, right, top, bottom = (int(round(v * marker_scale)) for v in bobber_search_window_below_marker)
+        height, width = frame_gray_full.shape[:2]
+        x0, x1 = max(0, mx + left), min(width, mx + right)
+        y0, y1 = max(0, my + top), min(height, my + bottom)
+        window = frame_gray_full[y0:y1, x0:x1]
+
+        best = (-1.0, None, (0, 0))
+        if self.bobber_template_gray is not None and window.size:
+            for scale in bobber_match_scales:
+                template = cv2.resize(self.bobber_template_gray, None, fx=scale, fy=scale)
+                if template.shape[0] > window.shape[0] or template.shape[1] > window.shape[1]:
+                    continue
+                _, max_val, _, max_loc = cv2.minMaxLoc(cv2.matchTemplate(window, template, cv2.TM_CCOEFF_NORMED))
+                if max_val > best[0]:
+                    best = (max_val, max_loc, template.shape[:2])
+
+        dx, dy = bobber_offset_from_marker
+        usual = (marker_position[0] + int(round(dx * marker_scale)), marker_position[1] + int(round(dy * marker_scale)))
+
+        score, loc, (th, tw) = best
+        position = None
+        if loc is not None:
+            position = (frame.origin[0] + x0 + loc[0] + tw // 2, frame.origin[1] + y0 + loc[1] + th // 2)
+        close_enough = position is not None and max(abs(position[0] - usual[0]), abs(position[1] - usual[1])) \
+            <= bobber_near_marker_max_distance * marker_scale
+        if close_enough and score >= bobber_near_marker_match_threshold:
+            self.last_bobber_height = int(th)
+            self.last_bobber_source = "marker+template"
+            logger.info("Bobber found below the cog at screen %s, score %.3f, size %dpx tall.", position, score, th)
+            return position
+
+        self.last_bobber_height = int(round(45 * marker_scale))  # typical bobber size seen with the cog
+        self.last_bobber_source = "marker"
+        logger.info("Bobber image not clear below the cog (best %.3f at %s); using the usual offset: %s.",
+                    max(score, 0.0), position, usual)
+        return usual
+
     @handle_errors()
     def find_bobber(self, frame: ScreenshotFrame) -> Optional[tuple[int, int]]:
         """
@@ -192,6 +285,13 @@ class ObjectDetection:
             return None
 
         frame_gray_full = cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY)
+        self.last_bobber_source = None
+
+        # Preferred: find the addon's cog marker, then the bobber just below it.
+        marker = self.find_bobber_marker(frame, frame_gray_full)
+        if marker is not None:
+            return self.__find_bobber_below_marker(frame, frame_gray_full, *marker)
+
         frame_gray = frame_gray_full[y_start:y_end, x_start:x_end]
         template_height, template_width = self.bobber_template_gray.shape[:2]
 
@@ -216,6 +316,7 @@ class ObjectDetection:
 
         if best_val >= bobber_match_threshold:
             self.last_bobber_height = int(best_matched_height)
+            self.last_bobber_source = "template"
             logger.info("Bobber found at screen (%d, %d), score %.3f (threshold %.3f), size %dpx tall",
                         best_screen_x, best_screen_y, best_val, bobber_match_threshold, best_matched_height)
             return best_screen_x, best_screen_y
@@ -238,6 +339,7 @@ class ObjectDetection:
             fallback_position = self.__find_bobber_by_color(frame, x_start, x_end, y_start, y_end, seed_position)
             if fallback_position is not None:
                 self.last_bobber_height = int(matched_height)
+                self.last_bobber_source = "color"
                 logger.info("Bobber found via color-blob fallback at screen %s (seed score %.3f).",
                             fallback_position, score)
                 return fallback_position

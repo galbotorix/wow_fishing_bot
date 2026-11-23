@@ -80,6 +80,27 @@ bobber_motion_min_diff = 15  # min per-pixel BGR-sum difference required to call
 assets_dir_name = "assets"
 templates_dir_name = "templates"
 bobber_template_file_name = "bobber.jpg"  # cropped reference image of the bobber icon/float
+
+# Bobber marker: a fishing addon draws a small cog icon above the bobber.
+# Being a flat UI icon, it looks the same at any distance, in fog, and
+# through RustDesk, so it's far easier to find than the bobber itself. When
+# it's on screen the bot finds it first, then looks for the bobber just
+# below it. Without the addon (no cog found) the bot falls back to finding
+# the bobber directly.
+use_bobber_marker = True
+bobber_marker_template_file_name = "bobber_marker.png"
+# Measured on 3 captures: a real cog scores 0.73-1.00 (0.73 = over bright
+# orange shore), anything else on screen <= 0.66.
+bobber_marker_match_threshold = 0.70
+bobber_marker_scales = [0.8, 0.9, 1.0, 1.1, 1.2]  # RustDesk shrinks it to ~0.9
+# Where the bobber sits relative to the cog (pixels at marker scale 1.0),
+# measured over 164 frames: dx -28..-13 (median -17), dy +80..+116 (median +96).
+bobber_offset_from_marker = (-17, 96)
+# Window below the cog to search for the bobber image itself: (left, right, top, bottom) offsets.
+bobber_search_window_below_marker = (-95, 65, 35, 195)
+bobber_near_marker_match_threshold = 0.50  # looser than 0.70: the cog already pins it down (real: 0.47-0.81, median 0.62)
+bobber_near_marker_max_distance = 45  # ...and the match must be within this many pixels of the usual offset,
+                                      # otherwise the usual offset itself is used (accurate to ~15px)
 bobber_match_threshold = 0.70  # cv2.matchTemplate TM_CCOEFF_NORMED score required to accept a match
 # The bobber's apparent on-screen size varies with camera zoom, which the
 # player can change between casts/sessions. Instead of needing a template

@@ -413,3 +413,15 @@ def test_does_not_resolve_game_window_if_stopped_during_countdown(mocks):
     FishingBot().run()
 
     mocks["resolve_game_window"].assert_not_called()
+
+
+def test_parks_mouse_before_every_cast(mocks):
+    """The cursor can cover the addon's cog or the bobber, so it's moved away before each cast."""
+    order = []
+    mocks["controls_interaction"].park_mouse.side_effect = lambda *a: order.append("park")
+    mocks["controls_interaction"].cast_fishing_line.side_effect = lambda *a: order.append("cast")
+    mocks["emergency_stop"].is_stop_requested.side_effect = [False] * (start_delay_seconds + 2) + [True] * 100
+
+    FishingBot().run()
+
+    assert order[:2] == ["park", "cast"]
