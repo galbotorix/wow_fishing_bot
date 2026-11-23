@@ -35,7 +35,7 @@ def mock_focus_window(monkeypatch):
     never actually enumerate/focus windows on the real desktop.
     """
     mock = MagicMock(return_value=True)
-    monkeypatch.setattr(controls_interaction_module, "focus_window_by_title_substring", mock)
+    monkeypatch.setattr(controls_interaction_module, "focus_game_window", mock)
     return mock
 
 

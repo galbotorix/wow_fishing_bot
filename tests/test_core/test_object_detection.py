@@ -612,3 +612,66 @@ def test_motion_splash_ignores_slowly_drifting_reflection(objects, step):
         results = [object_detection.detect_splash(frame, (869, 220), mode="motion")
                    for frame in frames[offset::step]]
         assert not any(results), f"false bite (offset {offset})"
+
+
+@pytest.mark.parametrize("step", [1, 2])  # every 0.1s and 0.2s (the bot's real check speed)
+def test_motion_splash_detects_faint_rustdesk_bite(objects, step):
+    """
+    Third real capture (Nov 2026, Bladefist Bay) as seen THROUGH RUSTDESK:
+    fog and video compression make the splash much fainter than on the
+    gaming PC itself. The bite starts at t=29.1s.
+    """
+    object_detection = objects['object_detection']
+    frames, times = load_sequence("real_rustdesk_bite_sequence.npz")
+
+    for offset in range(step):
+        object_detection.reset_splash_watch()
+        object_detection.last_bobber_height = 57
+        detected_at = None
+        for frame, t in list(zip(frames, times))[offset::step]:
+            if object_detection.detect_splash(frame, (832, 700), mode="motion"):
+                detected_at = t
+                break
+        assert detected_at is not None, f"missed the RustDesk bite (offset {offset})"
+        assert 29.05 <= detected_at <= 29.6, f"detected at {detected_at}s (offset {offset})"
+
+
+@pytest.mark.parametrize("step", [1, 2, 3])
+def test_motion_splash_no_false_bite_on_calm_rustdesk_water(objects, step):
+    """12 seconds of a RustDesk cast with no bite at all must never count as a bite."""
+    object_detection = objects['object_detection']
+    frames, _ = load_sequence("real_rustdesk_no_bite_sequence.npz")
+
+    for offset in range(step):
+        object_detection.reset_splash_watch()
+        object_detection.last_bobber_height = 51
+        results = [object_detection.detect_splash(frame, (926, 701), mode="motion") for frame in frames[offset::step]]
+        assert not any(results), f"false bite (offset {offset})"
+
+
+def test_finds_bobber_low_on_screen_through_rustdesk(objects):
+    """
+    Bladefist Bay through RustDesk: the bobber sits at y~700, below the old
+    search area (which stopped at y=500). Must be found and pass the
+    feather-colour check.
+    """
+    object_detection = objects['object_detection']
+    frame = load_frame("screenshot_rustdesk_bobber_low.jpg", FIXTURES_DIR)
+
+    position = object_detection.find_bobber(frame)
+
+    assert position is not None
+    assert abs(position[0] - 830) <= 15 and abs(position[1] - 702) <= 15
+    assert object_detection.has_bobber_feather_colors(frame, position) is True
+
+
+def test_feather_check_rejects_dull_orange_shore(objects):
+    """Dull orange shoreline/reflections (seen as false finds) must fail the strict red-feather check."""
+    object_detection = objects['object_detection']
+    # A dull-orange patch (hue ~10, saturation ~60) like the shoreline false matches, with a bluish bit.
+    patch = np.zeros((80, 80, 3), dtype=np.uint8)
+    patch[:] = cv2.cvtColor(np.uint8([[[10, 60, 110]]]), cv2.COLOR_HSV2BGR)[0, 0]
+    patch[30:50, 30:50] = cv2.cvtColor(np.uint8([[[110, 90, 120]]]), cv2.COLOR_HSV2BGR)[0, 0]
+    dull = ScreenshotFrame(image=patch, timestamp=0.0, origin=(0, 0))
+
+    assert object_detection.has_bobber_feather_colors(dull, (40, 40)) is False

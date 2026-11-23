@@ -8,7 +8,7 @@ from support.constants import fishing_keybind, key_press_duration, mouse_move_du
     reel_click_modifier_key, reel_modifier_press_delay, reel_click_hold_duration, reel_modifier_release_delay, \
     reel_click_spray_offsets, reel_click_spray_delay, park_mouse_after_reel, park_mouse_position, \
     park_mouse_move_duration, wow_window_title_substring
-from support.window_utils import focus_window_by_title_substring
+from support.window_utils import focus_game_window
 
 logger = get_logger(__name__)
 
@@ -30,7 +30,7 @@ class ControlsInteraction:
     @handle_errors()
     def cast_fishing_line(self) -> None:
         """Presses the configured fishing keybind to cast the line."""
-        focus_window_by_title_substring(wow_window_title_substring)
+        focus_game_window(wow_window_title_substring)
         logger.info("Casting fishing line (key=%s)", fishing_keybind)
         pydirectinput.keyDown(fishing_keybind)
         time.sleep(key_press_duration)
@@ -63,7 +63,7 @@ class ControlsInteraction:
         that same spot to pick the fish up if auto-loot didn't. Call
         park_mouse() once looting is done.
         """
-        focus_window_by_title_substring(wow_window_title_substring)
+        focus_game_window(wow_window_title_substring)
         x, y = bobber_position
         logger.info("Reeling in (and auto-looting) bobber at (%d, %d), trying %d nearby click points",
                     x, y, len(reel_click_spray_offsets))
@@ -93,7 +93,7 @@ class ControlsInteraction:
         auto-loot didn't. If auto-loot already took it, the click just
         lands on water and does nothing.
         """
-        focus_window_by_title_substring(wow_window_title_substring)
+        focus_game_window(wow_window_title_substring)
         x, y = position
         logger.info("Clicking the loot slot under (%d, %d) in case the loot window stayed open.", x, y)
         pydirectinput.moveTo(x, y, duration=mouse_move_duration)

@@ -2,7 +2,8 @@ import time
 import tkinter as tk
 import uuid
 
-from support.window_utils import enable_dpi_awareness, focus_window_by_title_substring
+from support.window_utils import enable_dpi_awareness, focus_window_by_title_substring, \
+    resolve_game_window, get_game_window, get_window_rect
 
 
 def test_enable_dpi_awareness_does_not_raise():
@@ -74,3 +75,44 @@ def test_does_not_find_a_destroyed_window():
     root.destroy()
 
     assert focus_window_by_title_substring(unique_title) is False
+
+
+def test_resolve_game_window_prefers_title_match_and_reports_its_rect():
+    unique_title = f"wow-fishing-bot-game-window-{uuid.uuid4()}"
+    root = tk.Tk()
+    root.title(unique_title)
+    root.geometry("200x100+50+60")
+    root.update()
+    time.sleep(0.1)
+
+    try:
+        hwnd = resolve_game_window([unique_title])
+        assert hwnd is not None
+        assert get_game_window() == hwnd
+        left, top, right, bottom = get_window_rect(hwnd)
+        assert right > left and bottom > top
+    finally:
+        root.destroy()
+
+
+def test_resolve_game_window_ignores_the_bots_own_window():
+    """If nothing matches and the foreground window is the bot's GUI, no window is chosen."""
+    unique_title = f"WoW Fishing Bot test {uuid.uuid4()}"
+    root = tk.Tk()
+    root.title(unique_title)
+    root.geometry("200x100+50+60")
+    root.update()
+    root.focus_force()
+    root.update()
+    time.sleep(0.2)
+
+    try:
+        assert resolve_game_window([f"no-such-window-{uuid.uuid4()}"], ignore_title_substrings=[unique_title]) in (
+            None, get_game_window())
+        # whichever window was in the foreground, it must not be the ignored GUI window
+        hwnd = get_game_window()
+        if hwnd is not None:
+            from support.window_utils import _get_window_title
+            assert unique_title not in _get_window_title(hwnd)
+    finally:
+        root.destroy()

@@ -35,6 +35,8 @@ def mocks(monkeypatch):
     monkeypatch.setattr(fishing_bot_module, "ControlsInteraction", MagicMock(return_value=controls_interaction))
     monkeypatch.setattr(fishing_bot_module, "OcrRecognition", MagicMock(return_value=ocr_recognition))
     monkeypatch.setattr(fishing_bot_module, "EmergencyStop", MagicMock(return_value=emergency_stop))
+    resolve_game_window = MagicMock(return_value=None)
+    monkeypatch.setattr(fishing_bot_module, "resolve_game_window", resolve_game_window)
 
     # Default: stop never requested, unless a test overrides it.
     emergency_stop.is_stop_requested.return_value = False
@@ -52,6 +54,7 @@ def mocks(monkeypatch):
     )
 
     return {
+        "resolve_game_window": resolve_game_window,
         "screenshot_capture": screenshot_capture,
         "object_detection": object_detection,
         "controls_interaction": controls_interaction,
@@ -382,3 +385,31 @@ def test_waits_for_loot_before_recasting(mocks, mock_sleep):
     assert between.index("loot") < between.index("park")
     assert sum(item[1] for item in between if isinstance(item, tuple)) >= loot_wait_seconds
     mocks["controls_interaction"].loot_at.assert_called_once_with((10, 20))
+
+
+def test_resolves_game_window_after_countdown_before_first_cast(mocks):
+    """
+    The game window (and so the monitor to capture) is chosen when the
+    countdown ends -- after the user has had time to click into the game
+    -- and before the first cast. The bot's own GUI is never chosen.
+    """
+    from support.constants import wow_window_title_substring, gui_window_title
+
+    order = []
+    mocks["resolve_game_window"].side_effect = lambda *a, **k: order.append("resolve")
+    mocks["controls_interaction"].cast_fishing_line.side_effect = lambda *a: order.append("cast")
+    mocks["emergency_stop"].is_stop_requested.side_effect = [False] * (start_delay_seconds + 2) + [True] * 100
+
+    FishingBot().run()
+
+    mocks["resolve_game_window"].assert_called_once_with([wow_window_title_substring],
+                                                         ignore_title_substrings=[gui_window_title])
+    assert order[:2] == ["resolve", "cast"]
+
+
+def test_does_not_resolve_game_window_if_stopped_during_countdown(mocks):
+    mocks["emergency_stop"].is_stop_requested.return_value = True
+
+    FishingBot().run()
+
+    mocks["resolve_game_window"].assert_not_called()

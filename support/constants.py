@@ -4,7 +4,13 @@ This file contains constants used in the project.
 
 #region Screenshot Capture Constants
 screenshots_output_dir_name = "screenshots"
-monitor_number_where_the_screenshot_is_taken = 1
+monitor_number_where_the_screenshot_is_taken = 1  # used only when the monitor can't be picked automatically
+# Capture whichever monitor the game window is on (the window is picked at
+# the end of the start countdown: a "World of Warcraft" window, or else the
+# window you clicked into -- e.g. RustDesk). Monitor numbers follow Windows'
+# display layout, so a fixed number breaks as soon as screens are added,
+# rearranged or a remote session changes the primary display.
+auto_select_monitor_from_game_window = True
 capture_full_screen = True  # if True, ignore screenshot_area and capture the entire monitor
 screenshot_area = {
     "pixels_from_top": 100,  # 100px from the top
@@ -12,7 +18,7 @@ screenshot_area = {
     "width": 250,
     "height": 250,
 }
-wait_time_between_screenshots = 0.1  # delay between consecutive splash-watch screenshots
+wait_time_between_screenshots = 0.05  # delay between consecutive splash-watch screenshots (keeps checks ~0.1-0.15s apart)
 # Saving a full-screen PNG on every splash-watch check was most of the cost
 # of each check, stretching the real gap between checks to ~0.5s -- long
 # enough to sometimes step right over a bite (the visible splash only lasts
@@ -96,7 +102,11 @@ bobber_search_region_x_fraction = (2 / 9, 7 / 9)  # (left, right) as a fraction 
 # 1080p frame -- this acted as a persistent low-confidence distractor
 # whenever the real bobber was hard to match. Bottom bound lowered from
 # 6/9 (720px) to 500px so rows 500+ are excluded entirely.
-bobber_search_region_y_fraction = (1 / 9, 500 / 1080)  # (top, bottom) as a fraction of frame height
+bobber_search_region_y_fraction = (0.10, 0.74)  # (top, bottom) as a fraction of frame height
+# Taller than before (was 1/9 .. 500/1080): where the bobber lands on screen
+# depends on the camera angle at each spot -- y~170-280 at the Elwynn lake,
+# y~700 at Bladefist Bay. 0.74 stops just above the player frame / cast bar.
+# The strict red-feather check keeps the extra area from adding false finds.
 
 # The bobber's two feathers have distinctive, saturated blue and red
 # colors that plain water never has -- template matching alone works on
@@ -112,7 +122,12 @@ bobber_color_min_value = 40  # HSV value (brightness) required to count as a "co
 bobber_color_blue_hue_range = (95, 140)  # HSV hue range (0-179) for the blue feather
 bobber_color_red_hue_ranges = [(0, 12), (168, 179)]  # HSV hue wraps around 0/179 for red
 bobber_color_min_blue_pixels = 5  # minimum blue pixels required in the region
-bobber_color_min_red_pixels = 3  # minimum red pixels required in the region
+bobber_color_min_red_pixels = 30  # minimum STRONG red pixels required in the region (see below)
+# The red feather is strongly saturated even when it's small, foggy or seen
+# through RustDesk (90th-percentile saturation 175-238), while dull orange
+# shoreline/reflections that used to pass are <=77. Measured near real
+# bobbers: 147-331 pixels at this saturation; near false matches: 0.
+bobber_color_red_min_saturation = 100
 
 # Template matching (grayscale shape) is sensitive to camera zoom/angle
 # changes between casts/sessions, which repeatedly caused real bobber
@@ -194,12 +209,16 @@ splash_motion_min_radius = 18
 splash_motion_max_radius = 60
 splash_motion_baseline_frames = 4  # frames used to learn normal water motion before a bite can be detected
 splash_motion_spike_factor = 2.0  # a bite = change at least this many times the normal water motion...
-splash_motion_min_diff = 10.0  # ...and at least this much mean grayscale change (0-255), so dead-still water can't trigger on noise
-splash_motion_pixel_threshold = 25  # per-pixel grayscale change counted as "moved"
+splash_motion_min_diff = 8.0  # ...and at least this much mean grayscale change (0-255), so dead-still water can't trigger on noise
+splash_motion_pixel_threshold = 15  # per-pixel grayscale change counted as "moved"
 splash_motion_min_changed_ratio = 0.18  # and at least this fraction of the region must have "moved"
-# Tuned on two real 1080p captures (cork bobber near + far, Nov 2026) at the bot's real
-# ~0.3-0.5s screenshot cadence: normal bobbing = diff 2.6-9.0 / changed 0.00-0.11,
-# a bite = diff 15-20 / changed 0.20-0.29. Values sit between the two.
+# Tuned on 7 real casts (Elwynn lake near/far on the gaming PC, and
+# Bladefist Bay seen through RustDesk, where fog + video compression make
+# the splash much fainter), checked every 0.1-0.2s from every timing:
+#   calm water: diff <= 8.9, changed (>15 levels) <= 0.17
+#   bites:      diff >= 9.5, changed >= 0.20 (RustDesk) / 0.26+ (direct)
+# -> all 6 bites caught within 0.3s, no false bites. At 0.3s spacing the
+# faint RustDesk bites can be missed, hence the short wait between checks.
 # Second check: compare each frame with a learned picture of the calm water
 # (median of recent non-bite frames). The spray stays visible ~0.8s, so this
 # still catches a bite when two consecutive screenshots straddle it and look
@@ -263,6 +282,9 @@ park_mouse_after_reel = True
 park_mouse_position = (5, 5)  # absolute screen coordinates (near top-left corner)
 park_mouse_move_duration = 0.2  # deliberately longer than mouse_move_duration, so the move is clearly visible
 wow_window_title_substring = "World of Warcraft"  # used to find & focus the game window before sending input
+# If no window title contains this, the bot uses the window that is in the
+# foreground when the countdown ends -- so click into the game (or the
+# RustDesk window showing it) during the countdown.
 #endregion
 
 #region GUI Constants

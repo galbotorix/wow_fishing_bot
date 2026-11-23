@@ -271,3 +271,45 @@ def screenshot_capture_teardown():
     output_dir = Path(screenshot_capture_module.__file__).parent.parent / screenshot_capture_module.screenshots_output_dir_name
     if output_dir.exists():
         shutil.rmtree(output_dir)
+
+
+# --- Picking the monitor the game window is on --------------------------------
+
+from unittest.mock import MagicMock
+import core.screenshot_capture as screenshot_capture_module
+
+# Layout from a real multi-monitor log: a second screen LEFT of the main one,
+# which Windows/mss numbered as monitor 1.
+FAKE_MONITORS = [
+    {"left": -1920, "top": 0, "width": 3840, "height": 1080},  # 0 = all monitors
+    {"left": -1920, "top": 0, "width": 1920, "height": 1080},  # 1 = left screen
+    {"left": 0, "top": 0, "width": 1920, "height": 1080},      # 2 = main screen
+]
+
+
+def test_monitor_index_for_point():
+    find = ScreenshotCapture.monitor_index_for_point
+    assert find(FAKE_MONITORS, 960, 540) == 2
+    assert find(FAKE_MONITORS, -960, 540) == 1
+    assert find(FAKE_MONITORS, 0, 0) == 2           # left/top edges belong to the monitor
+    assert find(FAKE_MONITORS, 1920, 540) is None    # right edge is outside
+    assert find(FAKE_MONITORS, 100, 5000) is None
+
+
+def choose(objects, monkeypatch, window_rect, auto=True):
+    monkeypatch.setattr(screenshot_capture_module, "auto_select_monitor_from_game_window", auto)
+    monkeypatch.setattr(screenshot_capture_module, "get_game_window", lambda: 1234 if window_rect else None)
+    monkeypatch.setattr(screenshot_capture_module, "get_window_rect", lambda hwnd: window_rect if hwnd else None)
+    sct = MagicMock(monitors=FAKE_MONITORS)
+    return objects['screenshot_capture']._ScreenshotCapture__choose_monitor_number(sct)
+
+
+def test_captures_the_monitor_the_game_window_is_on(objects, monkeypatch):
+    assert choose(objects, monkeypatch, (100, 50, 1800, 1000)) == 2        # game on main screen
+    assert choose(objects, monkeypatch, (-1900, 0, -100, 1040)) == 1       # game on left screen
+
+
+def test_falls_back_to_configured_monitor(objects, monkeypatch):
+    assert choose(objects, monkeypatch, None) == monitor_number_where_the_screenshot_is_taken
+    assert choose(objects, monkeypatch, (100, 50, 1800, 1000), auto=False) == monitor_number_where_the_screenshot_is_taken
+    assert choose(objects, monkeypatch, (9000, 9000, 9100, 9100)) == monitor_number_where_the_screenshot_is_taken

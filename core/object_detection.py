@@ -12,6 +12,7 @@ from support.constants import assets_dir_name, templates_dir_name, bobber_templa
     bobber_search_region_y_fraction, bobber_motion_check_radius, \
     bobber_motion_min_diff, bobber_color_check_radius, bobber_color_min_saturation, bobber_color_min_value, \
     bobber_color_blue_hue_range, bobber_color_red_hue_ranges, bobber_color_min_blue_pixels, \
+    bobber_color_red_min_saturation, \
     bobber_color_min_red_pixels, bobber_color_fallback_min_blob_area, bobber_color_fallback_max_pair_distance, \
     bobber_color_fallback_search_radius, bobber_fallback_seed_candidates, bobber_fallback_seed_min_distance, \
     splash_region_radius, splash_brightness_threshold, splash_pixel_ratio_threshold, \
@@ -293,9 +294,12 @@ class ObjectDetection:
         blue_low, blue_high = bobber_color_blue_hue_range
         blue_mask = cv2.inRange(hsv, (blue_low,) + saturation_value_lower, (blue_high, 255, 255))
 
+        # Red feather: require strong saturation, so dull orange shore /
+        # reflections can't stand in for it.
+        red_lower = (max(bobber_color_min_saturation, bobber_color_red_min_saturation), bobber_color_min_value)
         red_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
         for red_low, red_high in bobber_color_red_hue_ranges:
-            red_mask |= cv2.inRange(hsv, (red_low,) + saturation_value_lower, (red_high, 255, 255))
+            red_mask |= cv2.inRange(hsv, (red_low,) + red_lower, (red_high, 255, 255))
 
         blue_centroids = ObjectDetection.__blob_centroids(blue_mask)
         red_centroids = ObjectDetection.__blob_centroids(red_mask)
@@ -388,9 +392,10 @@ class ObjectDetection:
         blue_count = int(np.count_nonzero(blue_mask))
 
         red_count = 0
+        red_min_saturation = max(bobber_color_min_saturation, bobber_color_red_min_saturation)
         for red_low, red_high in bobber_color_red_hue_ranges:
             red_mask = cv2.inRange(
-                hsv, (red_low,) + saturation_value_lower[1:], (red_high,) + saturation_value_upper[1:]
+                hsv, (red_low, red_min_saturation, bobber_color_min_value), (red_high,) + saturation_value_upper[1:]
             )
             red_count += int(np.count_nonzero(red_mask))
 

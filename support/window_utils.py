@@ -9,6 +9,8 @@ monitor) right before starting the bot.
 """
 
 import ctypes
+import ctypes.wintypes
+from typing import Optional, Sequence
 
 from support.app_logging import get_logger
 
@@ -22,6 +24,14 @@ _GetWindowTextLengthW = _user32.GetWindowTextLengthW
 _GetWindowTextW = _user32.GetWindowTextW
 _IsWindowVisible = _user32.IsWindowVisible
 _SetForegroundWindow = _user32.SetForegroundWindow
+_GetForegroundWindow = _user32.GetForegroundWindow
+_GetWindowRect = _user32.GetWindowRect
+_IsWindow = _user32.IsWindow
+
+# The window the bot works with (WoW itself, or e.g. a RustDesk window
+# showing it). Chosen once per run by resolve_game_window(); used to pick
+# which monitor to capture and which window to focus before input.
+_game_window: Optional[int] = None
 
 
 def enable_dpi_awareness() -> None:
@@ -103,3 +113,79 @@ def focus_window_by_title_substring(title_substring: str) -> bool:
     _SetForegroundWindow(found_hwnd[0])
     logger.debug("Focused window matching '%s'.", title_substring)
     return True
+
+
+def find_window_by_title_substring(title_substring: str) -> Optional[int]:
+    """Handle of the first visible top-level window whose title contains `title_substring` (case-insensitive)."""
+    found_hwnd = []
+
+    def callback(hwnd, _lparam):
+        if _IsWindowVisible(hwnd) and title_substring.lower() in _get_window_title(hwnd).lower():
+            found_hwnd.append(hwnd)
+            return False  # stop enumeration
+        return True
+
+    _EnumWindows(_EnumWindowsProc(callback), None)
+    return found_hwnd[0] if found_hwnd else None
+
+
+def get_window_rect(hwnd) -> Optional[tuple[int, int, int, int]]:
+    """(left, top, right, bottom) of a window in physical screen pixels, or None if it no longer exists."""
+    if not hwnd or not _IsWindow(hwnd):
+        return None
+    rect = ctypes.wintypes.RECT()
+    if not _GetWindowRect(hwnd, ctypes.byref(rect)):
+        return None
+    return rect.left, rect.top, rect.right, rect.bottom
+
+
+def resolve_game_window(title_substrings: Sequence[str], ignore_title_substrings: Sequence[str] = ()) -> Optional[int]:
+    """
+    Picks the window the bot should work with, once at the start of a run:
+      1. a window whose title contains any of `title_substrings`
+         (e.g. "World of Warcraft" when the bot runs on the gaming PC), else
+      2. whichever window is in the foreground right now -- the window the
+         user clicked into during the start countdown (e.g. the RustDesk
+         window when the bot runs on another PC), unless its title
+         contains one of `ignore_title_substrings` (the bot's own GUI).
+    The result is remembered for get_game_window()/focus_game_window().
+    """
+    global _game_window
+    for substring in title_substrings:
+        hwnd = find_window_by_title_substring(substring)
+        if hwnd:
+            _game_window = hwnd
+            logger.info("Game window: '%s' (title matches '%s').", _get_window_title(hwnd), substring)
+            return hwnd
+
+    hwnd = _GetForegroundWindow()
+    title = _get_window_title(hwnd) if hwnd else ""
+    if hwnd and not any(ignored.lower() in title.lower() for ignored in ignore_title_substrings if ignored):
+        _game_window = hwnd
+        logger.info("No window titled %s found; using the window you clicked into during the countdown: '%s'.",
+                    " / ".join(f"'{t}'" for t in title_substrings), title)
+        return hwnd
+
+    _game_window = None
+    logger.warning("Could not tell which window is the game (foreground window: '%s'). Click into the game "
+                   "window during the countdown. Falling back to the configured monitor.", title)
+    return None
+
+
+def get_game_window() -> Optional[int]:
+    """The window chosen by resolve_game_window(), if it still exists."""
+    if _game_window and _IsWindow(_game_window):
+        return _game_window
+    return None
+
+
+def focus_game_window(fallback_title_substring: str) -> bool:
+    """
+    Brings the remembered game window to the foreground before input.
+    Falls back to searching by title if no game window was resolved.
+    """
+    hwnd = get_game_window()
+    if hwnd:
+        _SetForegroundWindow(hwnd)
+        return True
+    return focus_window_by_title_substring(fallback_title_substring)

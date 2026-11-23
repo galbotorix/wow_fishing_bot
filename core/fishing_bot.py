@@ -8,11 +8,13 @@ from core.object_detection import ObjectDetection
 from core.ocr_recognition import OcrRecognition
 from core.screenshot_capture import ScreenshotCapture
 from support.app_logging import get_logger
+from support.window_utils import resolve_game_window
 from support.constants import max_state_machine_iterations, splash_watch_timeout_seconds, \
     cast_animation_wait_seconds, max_bobber_search_attempts, bobber_search_retry_delay_seconds, \
     wait_time_between_screenshots, save_splash_watch_screenshots, loot_wait_seconds, \
     loot_click_after_reel, loot_window_open_delay_seconds, start_delay_seconds, bobber_motion_check_delay_seconds, \
-    clear_screenshots_before_each_cast as default_clear_screenshots_before_each_cast
+    clear_screenshots_before_each_cast as default_clear_screenshots_before_each_cast, \
+    wow_window_title_substring, gui_window_title
 
 logger = get_logger(__name__)
 
@@ -92,6 +94,11 @@ class FishingBot:
         """
         if not self.__wait_before_starting():
             return  # stop was requested during the countdown
+
+        # Decide which window is the game (and so which monitor to capture
+        # and which window to focus): a "World of Warcraft" window, or else
+        # the window the user clicked into during the countdown.
+        resolve_game_window([wow_window_title_substring], ignore_title_substrings=[gui_window_title])
 
         state = FishingState.IDLE
         screenshot_number = 0
